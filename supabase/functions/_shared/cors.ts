@@ -3,9 +3,14 @@
  * Allows requests from Google Sheets and Google Apps Script
  */
 
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://docs.google.com',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-  'Access-Control-Max-Age': '86400',
-};
+export function cors(extra: Record<string, string> = {}) {
+  return {
+    "Access-Control-Allow-Origin": "https://docs.google.com",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Vary": "Origin",
+    ...extra,
+  };
+}
+
+

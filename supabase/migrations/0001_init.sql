@@ -1,106 +1,117 @@
--- Initial schema for AI Sheets Analyst
--- Core tables for plans, patches, reservations, and provenance
+-- 0001_init.sql
+-- Initial schema for AI Sheets Analyst (clean/minimal, add-on v1)
 
--- Enable necessary extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Extensions
+create extension if not exists pgcrypto;  -- for gen_random_uuid()
 
--- Plans table - stores AI-generated plans
-CREATE TABLE plans (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    instruction TEXT NOT NULL,
-    explain TEXT NOT NULL,
-    actions JSONB NOT NULL,
-    requested_reservations JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- Updated-at trigger util
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end$$;
+
+-- =============== CORE TABLES ===============
+
+-- Plans: AI-generated plans (planner output)
+create table public.plans (
+  id                uuid primary key default gen_random_uuid(),
+  spreadsheet_id    text not null,
+  user_id           text not null,
+  instruction       text not null,
+  explain           text not null,
+  actions           jsonb not null,
+  requested_reservations jsonb not null,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
 );
 
--- Reservations table - time-based locks on cell ranges
-CREATE TABLE reservations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    range_a1 TEXT NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    plan_id UUID REFERENCES plans(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+create trigger trg_plans_updated_at
+before update on public.plans
+for each row execute function public.set_updated_at();
+
+-- Reservations: time-based locks on A1 ranges
+create table public.reservations (
+  id                uuid primary key default gen_random_uuid(),
+  spreadsheet_id    text not null,
+  user_id           text not null,
+  range_a1          text not null,
+  expires_at        timestamptz not null,
+  plan_id           uuid references public.plans(id) on delete cascade,
+  created_at        timestamptz not null default now()
 );
 
--- Patches table - audit trail of applied changes
-CREATE TABLE patches (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    plan_id UUID REFERENCES plans(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL,
-    touched_ranges JSONB NOT NULL,
-    before_state JSONB,
-    after_state JSONB,
-    applied_at TIMESTAMPTZ DEFAULT NOW()
+-- Patches: audit trail of applied changes (for undo)
+create table public.patches (
+  id                uuid primary key default gen_random_uuid(),
+  spreadsheet_id    text not null,
+  plan_id           uuid references public.plans(id) on delete cascade,
+  user_id           text not null,
+  touched_ranges    jsonb not null,
+  before_state      jsonb,
+  after_state       jsonb,
+  applied_at        timestamptz not null default now()
 );
 
--- Sessions table - user presence and activity
-CREATE TABLE sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    active_range_a1 TEXT,
-    sheet_name TEXT,
-    last_seen TIMESTAMPTZ DEFAULT NOW(),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- Sessions: presence / activity (sidebar)
+create table public.sessions (
+  id                uuid primary key default gen_random_uuid(),
+  spreadsheet_id    text not null,
+  user_id           text not null,
+  display_name      text not null,
+  active_range_a1   text,
+  sheet_name        text,
+  last_seen         timestamptz not null default now(),
+  created_at        timestamptz not null default now()
 );
 
--- Provenance table - tracks data imports and their sources
-CREATE TABLE provenance (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    sheet_name TEXT NOT NULL,
-    range_a1 TEXT NOT NULL,
-    source_spreadsheet_id TEXT NOT NULL,
-    source_sheet_name TEXT NOT NULL,
-    source_range_a1 TEXT NOT NULL,
-    pull_mode TEXT NOT NULL CHECK (pull_mode IN ('LIVE_LINK', 'SNAPSHOT')),
-    row_count INTEGER NOT NULL,
-    col_count INTEGER NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- Provenance: cross-sheet pulls metadata
+create table public.provenance (
+  id                     uuid primary key default gen_random_uuid(),
+  spreadsheet_id         text not null,
+  sheet_name             text not null,
+  range_a1               text not null,
+  source_spreadsheet_id  text not null,
+  source_sheet_name      text not null,
+  source_range_a1        text not null,
+  pull_mode              text not null check (pull_mode in ('LIVE_LINK','SNAPSHOT')),
+  row_count              integer not null,
+  col_count              integer not null,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now()
 );
 
--- OAuth tokens table - encrypted user credentials
-CREATE TABLE oauth_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id TEXT NOT NULL UNIQUE,
-    encrypted_access_token TEXT NOT NULL,
-    encrypted_refresh_token TEXT NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+create trigger trg_provenance_updated_at
+before update on public.provenance
+for each row execute function public.set_updated_at();
+
+-- OAuth tokens: minimal, sealed refresh token only (base64(iv||ciphertext))
+create table public.oauth_tokens (
+  user_id               text not null,
+  provider              text not null default 'google',
+  sealed_refresh_token  text not null,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  primary key (user_id, provider)
 );
 
--- Schema cache table - performance optimization for sheet metadata
-CREATE TABLE schema_cache (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    spreadsheet_id TEXT NOT NULL,
-    sheet_name TEXT NOT NULL,
-    fingerprint JSONB NOT NULL,
-    headers JSONB,
-    row_count INTEGER,
-    col_count INTEGER,
-    cached_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '1 hour',
-    UNIQUE(spreadsheet_id, sheet_name)
-);
+create trigger trg_oauth_tokens_updated_at
+before update on public.oauth_tokens
+for each row execute function public.set_updated_at();
 
--- Indexes for performance
-CREATE INDEX idx_plans_spreadsheet_user ON plans(spreadsheet_id, user_id);
-CREATE INDEX idx_reservations_spreadsheet ON reservations(spreadsheet_id);
-CREATE INDEX idx_reservations_expires_at ON reservations(expires_at);
-CREATE INDEX idx_patches_spreadsheet ON patches(spreadsheet_id);
-CREATE INDEX idx_patches_plan_id ON patches(plan_id);
-CREATE INDEX idx_sessions_spreadsheet ON sessions(spreadsheet_id);
-CREATE INDEX idx_provenance_spreadsheet ON provenance(spreadsheet_id);
-CREATE INDEX idx_oauth_tokens_user_id ON oauth_tokens(user_id);
-CREATE INDEX idx_schema_cache_spreadsheet_sheet ON schema_cache(spreadsheet_id, sheet_name);
-CREATE INDEX idx_schema_cache_expires_at ON schema_cache(expires_at);
+-- Schema cache: sheet metadata + headers
+create table public.schema_cache (
+  id                uuid primary key default gen_random_uuid(),
+  spreadsheet_id    text not null,
+  sheet_name        text not null,
+  fingerprint       jsonb not null,
+  headers           jsonb,
+  row_count         integer,
+  col_count         integer,
+  cached_at         timestamptz not null default now(),
+  expires_at        timestamptz not null default (now() + interval '1 hour'),
+  unique (spreadsheet_id, sheet_name)
+);

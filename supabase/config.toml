@@ -12,7 +12,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [studio]
 enabled = true
@@ -27,12 +27,12 @@ pop3_port = 54326
 
 [storage]
 enabled = true
-image_transformation = {enabled = true}
+image_transformation = { enabled = true }
 
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:54321/functions/v1/oauth/callback"]
+additional_redirect_urls = ["http://localhost:54321/functions/v1/oauth-callback"]
 jwt_expiry = 3600
 
 [auth.email]
@@ -40,6 +40,7 @@ enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
 
+# Functions you actually serve (each has its own folder with index.ts)
 [functions.plan]
 verify_jwt = false
 
@@ -64,5 +65,8 @@ verify_jwt = false
 [functions.pull]
 verify_jwt = false
 
-[functions.oauth]
+[functions.oauth-start]
+verify_jwt = false
+
+[functions.oauth-callback]
 verify_jwt = false

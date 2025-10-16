@@ -1,147 +1,53 @@
--- Row Level Security policies for AI Sheets Analyst
--- Enable RLS on all tables and create policies for user isolation
+-- 0002_policies.sql
+-- Row Level Security (RLS) policies for dev. Service role bypasses RLS automatically.
 
--- Enable RLS on all tables
-ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE patches ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE provenance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE oauth_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE schema_cache ENABLE ROW LEVEL SECURITY;
+-- Enable RLS
+alter table public.plans         enable row level security;
+alter table public.reservations  enable row level security;
+alter table public.patches       enable row level security;
+alter table public.sessions      enable row level security;
+alter table public.provenance    enable row level security;
+alter table public.oauth_tokens  enable row level security;
+alter table public.schema_cache  enable row level security;
 
--- Plans policies
-CREATE POLICY "Users can view their own plans"
-  ON plans FOR SELECT
-  USING (auth.uid()::text = user_id);
+-- Plans: users can see and create their own plans
+create policy plans_select_own on public.plans
+for select using (auth.uid()::text = user_id);
+create policy plans_insert_own on public.plans
+for insert with check (auth.uid()::text = user_id);
 
-CREATE POLICY "Users can insert their own plans"
-  ON plans FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id);
+-- Reservations: users manage their own reservations
+create policy reservations_select_own on public.reservations
+for select using (auth.uid()::text = user_id);
+create policy reservations_insert_own on public.reservations
+for insert with check (auth.uid()::text = user_id);
+create policy reservations_delete_own on public.reservations
+for delete using (auth.uid()::text = user_id);
 
-CREATE POLICY "Users can update their own plans"
-  ON plans FOR UPDATE
-  USING (auth.uid()::text = user_id);
+-- Patches: users can see patches they applied (service role can see all)
+create policy patches_select_own on public.patches
+for select using (auth.uid()::text = user_id);
+create policy patches_insert_own on public.patches
+for insert with check (auth.uid()::text = user_id);
 
-CREATE POLICY "Service role can access all plans"
-  ON plans FOR ALL
-  USING (auth.role() = 'service_role');
+-- Sessions: user can upsert their own session rows
+create policy sessions_select_own on public.sessions
+for select using (auth.uid()::text = user_id);
+create policy sessions_upsert_own on public.sessions
+for insert with check (auth.uid()::text = user_id);
+create policy sessions_update_own on public.sessions
+for update using (auth.uid()::text = user_id);
 
--- Reservations policies
-CREATE POLICY "Users can view reservations in their spreadsheets"
-  ON reservations FOR SELECT
-  USING (
-    auth.uid()::text = user_id OR
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.spreadsheet_id = reservations.spreadsheet_id
-      AND sessions.user_id = auth.uid()::text
-    )
-  );
+-- Provenance: readable to authenticated users; writes usually via service role
+create policy provenance_select_all on public.provenance
+for select using (auth.role() = 'authenticated');
+create policy provenance_insert_authed on public.provenance
+for insert with check (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can create their own reservations"
-  ON reservations FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id);
+-- OAuth tokens: NO policies for regular roles (RLS on, deny by default).
+-- Edge Functions run with service_role and bypass RLS, which is what we want.
 
-CREATE POLICY "Users can update their own reservations"
-  ON reservations FOR UPDATE
-  USING (auth.uid()::text = user_id);
-
-CREATE POLICY "Users can delete their own reservations"
-  ON reservations FOR DELETE
-  USING (auth.uid()::text = user_id);
-
-CREATE POLICY "Service role can access all reservations"
-  ON reservations FOR ALL
-  USING (auth.role() = 'service_role');
-
--- Patches policies (audit log)
-CREATE POLICY "Users can view patches for their spreadsheets"
-  ON patches FOR SELECT
-  USING (
-    auth.uid()::text = user_id OR
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.spreadsheet_id = patches.spreadsheet_id
-      AND sessions.user_id = auth.uid()::text
-    )
-  );
-
-CREATE POLICY "Users can insert their own patches"
-  ON patches FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id);
-
-CREATE POLICY "Service role can access all patches"
-  ON patches FOR ALL
-  USING (auth.role() = 'service_role');
-
--- Sessions policies (presence)
-CREATE POLICY "Users can view sessions in their spreadsheets"
-  ON sessions FOR SELECT
-  USING (
-    auth.uid()::text = user_id OR
-    EXISTS (
-      SELECT 1 FROM sessions other_sessions
-      WHERE other_sessions.spreadsheet_id = sessions.spreadsheet_id
-      AND other_sessions.user_id = auth.uid()::text
-    )
-  );
-
-CREATE POLICY "Users can manage their own sessions"
-  ON sessions FOR ALL
-  USING (auth.uid()::text = user_id)
-  WITH CHECK (auth.uid()::text = user_id);
-
-CREATE POLICY "Service role can access all sessions"
-  ON sessions FOR ALL
-  USING (auth.role() = 'service_role');
-
--- Provenance policies
-CREATE POLICY "Users can view provenance for their spreadsheets"
-  ON provenance FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.spreadsheet_id = provenance.spreadsheet_id
-      AND sessions.user_id = auth.uid()::text
-    )
-  );
-
-CREATE POLICY "Users can insert provenance records"
-  ON provenance FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.spreadsheet_id = provenance.spreadsheet_id
-      AND sessions.user_id = auth.uid()::text
-    )
-  );
-
-CREATE POLICY "Service role can access all provenance"
-  ON provenance FOR ALL
-  USING (auth.role() = 'service_role');
-
--- OAuth tokens policies (basic - will be restricted further in 0006)
-CREATE POLICY "Users can access their own tokens"
-  ON oauth_tokens FOR ALL
-  USING (auth.uid()::text = user_id)
-  WITH CHECK (auth.uid()::text = user_id);
-
-CREATE POLICY "Service role can access all tokens"
-  ON oauth_tokens FOR ALL
-  USING (auth.role() = 'service_role');
-
--- Schema cache policies
-CREATE POLICY "Users can view schema cache for their active spreadsheets"
-  ON schema_cache FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.spreadsheet_id = schema_cache.spreadsheet_id
-      AND sessions.user_id = auth.uid()::text
-    )
-  );
-
-CREATE POLICY "Service role can manage schema cache"
-  ON schema_cache FOR ALL
-  USING (auth.role() = 'service_role');
+-- Schema cache: readable to authenticated; writes via service role
+create policy schema_cache_select_all on public.schema_cache
+for select using (auth.role() = 'authenticated');
+-- (no insert/update policy so normal users can't write)

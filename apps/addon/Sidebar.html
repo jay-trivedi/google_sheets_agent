@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Analyst (Phase 0)</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
+      header { padding: 12px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
+      .wrap { padding: 12px 14px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+      button { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background: #fff; }
+      button.primary { border-color: #2a7; }
+      pre { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; }
+      small { color: #666; }
+    </style>
+  </head>
+  <body>
+    <header>AI Analyst — Phase 0</header>
+    <div class="wrap">
+      <div class="row">
+        <button class="primary" id="btnRead">Read context</button>
+        <button id="btnClear">Clear</button>
+      </div>
+      <pre id="out">Click “Read context” to view selection, headers, and a small sample.</pre>
+      <p><small>Tip: Select a range first. Headers are taken from row 1 of the active sheet.</small></p>
+    </div>
+
+    <script>
+      (function () {
+        const out = document.getElementById('out');
+        const btnRead = document.getElementById('btnRead');
+        const btnClear = document.getElementById('btnClear');
+
+        function print(obj) {
+          out.textContent = JSON.stringify(obj, null, 2);
+        }
+
+        btnRead.addEventListener('click', function () {
+          out.textContent = 'Reading…';
+          google.script.run
+            .withSuccessHandler(function (ctx) { print(ctx); })
+            .withFailureHandler(function (err) { print({ error: String(err) }); })
+            .getContext();
+        });
+
+        btnClear.addEventListener('click', function () {
+          out.textContent = '';
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,27 +1,10 @@
 {
-  "timeZone": "America/New_York",
+  "timeZone": "Asia/Kolkata",
   "dependencies": {},
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8",
-  "executionApi": {
-    "access": "ANYONE"
-  },
-  "webapp": {
-    "access": "ANYONE_ANONYMOUS",
-    "executeAs": "USER_ACCESSING"
-  },
-  "sheets": {
-    "macros": [
-      {
-        "menuName": "AI Analyst",
-        "functionName": "openSidebar"
-      }
-    ]
-  },
-  "urlFetchWhitelist": [
-    "https://api.openai.com/",
-    "https://*.supabase.co/",
-    "http://localhost:54321/",
-    "https://docs.google.com/"
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.container.ui"
   ]
 }

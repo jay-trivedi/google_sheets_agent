@@ -1,0 +1,34 @@
+{
+  "name": "ai-sheets-analyst",
+  "version": "1.0.0",
+  "description": "AI-powered Google Sheets analyst with multi-user collaboration",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "supabase functions serve --env-file .env.local",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "deploy:functions": "supabase functions deploy --project-ref $SUPABASE_PROJECT_REF",
+    "migrate:dev": "supabase db reset --local",
+    "migrate:prod": "supabase db push --project-ref $SUPABASE_PROJECT_REF",
+    "clasp:push": "cd apps/addon && npx clasp push",
+    "clasp:pull": "cd apps/addon && npx clasp pull"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "prettier": "^3.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

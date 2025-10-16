@@ -3,27 +3,43 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Analyst (Phase 0)</title>
+    <title>AI Analyst (Phase 0.5)</title>
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
       header { padding: 12px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
       .wrap { padding: 12px 14px; }
-      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
       button { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background: #fff; }
       button.primary { border-color: #2a7; }
       pre { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; }
       small { color: #666; }
+      input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px;}
+      .hint { font-size: 12px; color: #666; }
     </style>
   </head>
   <body>
-    <header>AI Analyst — Phase 0</header>
+    <header>AI Analyst — Phase 0.5</header>
     <div class="wrap">
       <div class="row">
         <button class="primary" id="btnRead">Read context</button>
         <button id="btnClear">Clear</button>
       </div>
-      <pre id="out">Click “Read context” to view selection, headers, and a small sample.</pre>
-      <p><small>Tip: Select a range first. Headers are taken from row 1 of the active sheet.</small></p>
+
+      <div class="row">
+        <button id="btnPing">Ping backend</button>
+      </div>
+
+      <div class="row">
+        <label class="hint">Functions base URL (dev default):</label>
+        <input id="baseUrl" type="text" value="http://localhost:54321/functions/v1" />
+      </div>
+      <div class="row">
+        <label class="hint">Supabase anon key (optional for local; add in prod):</label>
+        <input id="anonKey" type="text" value="" />
+      </div>
+
+      <pre id="out">Use “Read context” to view selection, and “Ping backend” to hit the /plan function.</pre>
+      <p><small>Origin must be <code>https://docs.google.com</code> for CORS. The Edge Function already allows it.</small></p>
     </div>
 
     <script>
@@ -31,22 +47,40 @@
         const out = document.getElementById('out');
         const btnRead = document.getElementById('btnRead');
         const btnClear = document.getElementById('btnClear');
+        const btnPing = document.getElementById('btnPing');
+        const baseUrl = document.getElementById('baseUrl');
+        const anonKey = document.getElementById('anonKey');
 
-        function print(obj) {
-          out.textContent = JSON.stringify(obj, null, 2);
-        }
+        function print(obj) { out.textContent = JSON.stringify(obj, null, 2); }
+        function err(e) { print({ error: String(e && e.message || e) }); }
 
         btnRead.addEventListener('click', function () {
           out.textContent = 'Reading…';
           google.script.run
             .withSuccessHandler(function (ctx) { print(ctx); })
-            .withFailureHandler(function (err) { print({ error: String(err) }); })
+            .withFailureHandler(err)
             .getContext();
         });
 
-        btnClear.addEventListener('click', function () {
-          out.textContent = '';
+        btnPing.addEventListener('click', async function () {
+          out.textContent = 'Pinging…';
+          try {
+            const res = await fetch(baseUrl.value.replace(/\/$/, '') + '/plan', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                // In prod, include Authorization. Local usually works without it,
+                // but it’s safe to send the anon key in dev.
+                ...(anonKey.value ? { 'Authorization': 'Bearer ' + anonKey.value, 'apikey': anonKey.value } : {})
+              },
+              body: JSON.stringify({ instruction: 'ping', context: { source: 'sidebar' } })
+            });
+            const json = await res.json();
+            print(json);
+          } catch (e) { err(e); }
         });
+
+        btnClear.addEventListener('click', function () { out.textContent = ''; });
       })();
     </script>
   </body>

@@ -38,13 +38,13 @@ async function refreshAccessToken(refresh_token: string) {
 }
 
 httpServe(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() });
-  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors() });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
+  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors(req) });
 
   const { clientUserId, context }: { clientUserId: string; context: SheetContext } = await req.json();
   if (!clientUserId || !context) {
     return new Response(JSON.stringify({ error: "clientUserId and context required" }), {
-      status: 400, headers: cors({ "Content-Type": "application/json" }),
+      status: 400, headers: cors(req, { "Content-Type": "application/json" }),
     });
   }
 
@@ -56,8 +56,8 @@ httpServe(async (req) => {
     .eq("provider", "google")
     .maybeSingle();
 
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: cors({ "Content-Type": "application/json" }) });
-  if (!data) return new Response(JSON.stringify({ error: "No token for user. Connect Google first." }), { status: 401, headers: cors({ "Content-Type": "application/json" }) });
+  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: cors(req, { "Content-Type": "application/json" }) });
+  if (!data) return new Response(JSON.stringify({ error: "No token for user. Connect Google first." }), { status: 401, headers: cors(req, { "Content-Type": "application/json" }) });
 
   const refreshToken = await open(data.sealed_refresh_token);
   const accessToken = await refreshAccessToken(refreshToken);
@@ -93,7 +93,7 @@ httpServe(async (req) => {
     });
     if (!r.ok) {
       const t = await r.text();
-      return new Response(JSON.stringify({ error: "insert columns failed", details: t }), { status: 400, headers: cors({ "Content-Type": "application/json" }) });
+      return new Response(JSON.stringify({ error: "insert columns failed", details: t }), { status: 400, headers: cors(req, { "Content-Type": "application/json" }) });
     }
   }
 
@@ -107,6 +107,6 @@ httpServe(async (req) => {
   const j2 = await r2.json();
 
   return new Response(JSON.stringify({ ok: true, wroteA1: targetA1, update: j2 }), {
-    status: 200, headers: cors({ "Content-Type": "application/json" }),
+    status: 200, headers: cors(req, { "Content-Type": "application/json" }),
   });
 });

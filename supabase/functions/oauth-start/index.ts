@@ -2,14 +2,14 @@ import { serve as httpServe } from "https://deno.land/std@0.224.0/http/server.ts
 import { cors } from "../_shared/cors.ts";
 
 httpServe(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors() });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
 
   let body: any = {};
   try { body = await req.json(); } catch {}
   const clientUserId = body?.clientUserId;
   if (!clientUserId) {
     return new Response(JSON.stringify({ error: "clientUserId required" }), {
-      status: 400, headers: cors({ "Content-Type": "application/json" }),
+      status: 400, headers: cors(req, { "Content-Type": "application/json" }),
     });
   }
 
@@ -17,7 +17,7 @@ httpServe(async (req) => {
   const redirectUri = Deno.env.get("GOOGLE_OAUTH_REDIRECT_URL");
   if (!clientId || !redirectUri) {
     return new Response(JSON.stringify({ error: "Missing GOOGLE_CLIENT_ID or GOOGLE_OAUTH_REDIRECT_URL" }), {
-      status: 500, headers: cors({ "Content-Type": "application/json" }),
+      status: 500, headers: cors(req, { "Content-Type": "application/json" }),
     });
   }
 
@@ -39,5 +39,5 @@ httpServe(async (req) => {
 
   return new Response(JSON.stringify({
     authUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}`
-  }), { status: 200, headers: cors({ "Content-Type": "application/json" }) });
+  }), { status: 200, headers: cors(req, { "Content-Type": "application/json" }) });
 });

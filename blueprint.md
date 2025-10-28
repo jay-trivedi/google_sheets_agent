@@ -10,6 +10,17 @@
 
 ---
 
+## Phase Progress (running log)
+
+- **Phase 0 – Bootstrap add-on** ✅ (sidebar read flow live)
+- **Phase 0.5 – Supabase ping** ✅ (remote `/plan` wired)
+- **Phase 1 – Local apply** ✅ (Apps Script write helper)
+- **Phase 1.1 – Backend executor** ✅ (App-AES token path)
+- **Phase 1.2 – pgsodium/Vault** ⏸️ *Deferred* — App-AES fallback in use; revisit when Vault extensions are provisioned.
+- **Phase 2 – Preview + Diff** ⏳ *Next up*
+
+---
+
 ## Monorepo layout (updated)
 
 ```

@@ -19,12 +19,13 @@
     </style>
   </head>
   <body>
-    <header>AI Analyst — Phase 1.1</header>
+    <header>AI Analyst — Phase 2.0</header>
     <div class="wrap">
       <div class="row">
         <button class="primary" id="btnRead">Read context</button>
+        <button id="btnPreview">Preview change</button>
         <button id="btnLocalHello">Write “hello” locally</button>
-        <button id="btnBackendHello">Write “hello” via backend</button>
+        <button id="btnBackendHello" disabled>Apply via backend</button>
         <button id="btnClear">Clear</button>
       </div>
 
@@ -47,7 +48,7 @@
         <small class="hint">Optional sanity check.</small>
       </div>
 
-      <pre id="out">1) Connect Google → finish OAuth in new tab.\n2) Read context.\n3) Write “hello” via backend.\n\nBase must point to your functions (dev default shown).</pre>
+      <pre id="out">1) Connect Google → finish OAuth in new tab.\n2) Read context.\n3) Preview change → confirm summary.\n4) Apply via backend.\n\nBase must point to your functions (dev default shown).</pre>
     </div>
 
     <script>
@@ -55,6 +56,7 @@
         const out = document.getElementById('out');
         const btnRead = document.getElementById('btnRead');
         const btnClear = document.getElementById('btnClear');
+        const btnPreview = document.getElementById('btnPreview');
         const btnLocalHello = document.getElementById('btnLocalHello');
         const btnBackendHello = document.getElementById('btnBackendHello');
         const btnConnect = document.getElementById('btnConnect');
@@ -88,11 +90,28 @@
           return baseUrl.value.replace(/\/$/, '') + path;
         }
 
+        let lastPreview = null;
+        let lastContextSignature = null;
+
+        function contextSignature(ctx) {
+          return `${ctx.spreadsheetId}:${ctx.sheetId}:${ctx.activeRangeA1}`;
+        }
+
+        function resetPreviewState() {
+          lastPreview = null;
+          lastContextSignature = null;
+          btnBackendHello.disabled = true;
+        }
+
         // Read current sheet context via Apps Script
         btnRead.addEventListener('click', function () {
           out.textContent = 'Reading…';
           google.script.run
-            .withSuccessHandler(function (ctx) { print({ clientUserId, ctx }); window.__ctx = ctx; })
+            .withSuccessHandler(function (ctx) {
+              print({ clientUserId, ctx });
+              window.__ctx = ctx;
+              resetPreviewState();
+            })
             .withFailureHandler(err)
             .getContext();
         });
@@ -111,11 +130,53 @@
           } catch (e) { err(e); }
         });
 
+        // Request preview via Supabase
+        async function ensureContext() {
+          if (window.__ctx) return window.__ctx;
+          return await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler((ctx) => {
+                window.__ctx = ctx;
+                resolve(ctx);
+              })
+              .withFailureHandler(reject)
+              .getContext();
+          });
+        }
+
+        btnPreview.addEventListener('click', async function () {
+          try {
+            out.textContent = 'Previewing…';
+            const ctx = await ensureContext();
+            const res = await fetch(fn('/preview'), {
+              method: 'POST',
+              headers: headers(),
+              body: JSON.stringify({ clientUserId, context: ctx })
+            });
+            const json = await res.json();
+            if (!res.ok || !json.ok) {
+              err(json?.error || `Preview failed (${res.status})`);
+              resetPreviewState();
+              return;
+            }
+            lastPreview = json.preview;
+            lastContextSignature = contextSignature(ctx);
+            btnBackendHello.disabled = false;
+            print({ preview: json.preview, ctx });
+          } catch (e) {
+            err(e);
+            resetPreviewState();
+          }
+        });
+
         // Apply via Apps Script locally
         btnLocalHello.addEventListener('click', function () {
           out.textContent = 'Applying locally…';
           google.script.run
-            .withSuccessHandler(function (result) { print({ mode: 'local', result }); })
+            .withSuccessHandler(function (result) {
+              print({ mode: 'local', result });
+              resetPreviewState();
+            })
             .withFailureHandler(err)
             .applyLocalWriteHello();
         });
@@ -124,20 +185,19 @@
         btnBackendHello.addEventListener('click', async function () {
           try {
             out.textContent = 'Applying via backend…';
-            if (!window.__ctx) {
-              await new Promise((ok, ko) => {
-                google.script.run
-                  .withSuccessHandler(function (ctx) { window.__ctx = ctx; ok(null); })
-                  .withFailureHandler(ko)
-                  .getContext();
-              });
+            const ctx = await ensureContext();
+            if (!lastPreview || lastContextSignature !== contextSignature(ctx)) {
+              err("Run preview before applying.");
+              btnBackendHello.disabled = true;
+              return;
             }
             const res = await fetch(fn('/apply'), {
               method: 'POST', headers: headers(),
-              body: JSON.stringify({ clientUserId, context: window.__ctx })
+              body: JSON.stringify({ clientUserId, context: ctx })
             });
             const json = await res.json();
             print(json);
+            resetPreviewState();
           } catch (e) { err(e); }
         });
 
@@ -164,7 +224,7 @@
             print(json);
           } catch (e) { err(e); }
         });
-        btnClear.addEventListener('click', function () { out.textContent = ''; });
+        btnClear.addEventListener('click', function () { out.textContent = ''; resetPreviewState(); });
       })();
     </script>
   </body>

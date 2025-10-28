@@ -13,7 +13,7 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "test:phase0": "vitest run --config vitest.config.integration.ts --reporter verbose",
-    "test:supabase": "deno test --allow-env --allow-net supabase/functions/tests",
+    "test:supabase": "deno test --allow-env --allow-net --allow-read supabase/functions/tests",
     "lint": "pnpm -r lint",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "deploy:functions": "supabase functions deploy --project-ref $SUPABASE_PROJECT_REF",

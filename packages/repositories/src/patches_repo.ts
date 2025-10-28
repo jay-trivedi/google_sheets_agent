@@ -3,6 +3,7 @@ export type PatchState = {
   values: unknown[][];
   undo?: {
     undoneAt: string;
+    restoredValues?: unknown[][];
   };
 };
 
@@ -40,12 +41,13 @@ export function buildSingleCellPatch(opts: {
   };
 }
 
-export function markUndo(afterState: PatchState | null, undoneAt: string): PatchState | null {
+export function markUndo(afterState: PatchState | null, restoredValues: unknown[][], undoneAt: string): PatchState | null {
   if (!afterState) return null;
   return {
     ...afterState,
     undo: {
-      undoneAt
+      undoneAt,
+      restoredValues
     }
   } as PatchState;
 }

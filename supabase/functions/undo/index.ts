@@ -100,7 +100,7 @@ httpServe(async (req) => {
   }
 
   const undoneAt = new Date().toISOString();
-  const newAfterState = markUndo(afterState, undoneAt);
+  const newAfterState = markUndo(afterState, restoreValues, undoneAt);
   const { error: updateError } = await supabase
     .from("patches")
     .update({ after_state: newAfterState })
@@ -128,7 +128,7 @@ httpServe(async (req) => {
     console.warn("Failed to append undo audit row:", auditError);
   }
 
-  return new Response(JSON.stringify({ ok: true, patchId, restoredRange: restoreRange, update: updateJson }), {
+  return new Response(JSON.stringify({ ok: true, patchId, restoredRange: restoreRange, restoredValues: restoreValues, update: updateJson }), {
     status: 200,
     headers: cors(req, { "Content-Type": "application/json" })
   });

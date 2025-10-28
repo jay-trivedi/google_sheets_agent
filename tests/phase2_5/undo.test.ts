@@ -90,6 +90,18 @@ if (allMissing.length > 0) {
 
   const seedValue = process.env.PHASE1_SEED_VALUE || "target";
   const initialHelloTarget = "initial";
+  async function waitForCellValue(range: string, expected: string, tries = 5) {
+    for (let attempt = 0; attempt < tries; attempt += 1) {
+      const { data } = await sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId!,
+        range: `${sheetName}!${range}`
+      });
+      const current = data.values?.[0]?.[0] ?? "";
+      if (current === expected) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`Cell ${range} did not reach expected value ${expected}`);
+  }
 
   function nextColumn(a1: string): string {
     const match = /^([A-Z]+)(\d+)$/i.exec(a1.trim());
@@ -120,79 +132,101 @@ if (allMissing.length > 0) {
     it(
       "restores previous value via undo endpoint",
       async () => {
-        await sheets.spreadsheets.values.batchUpdate({
+        const originalCellRes = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId!,
-          requestBody: {
+          range: `${sheetName}!${expectedCell}`
+        });
+        const originalCellValues = originalCellRes.values ?? [];
+
+        try {
+          await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: spreadsheetId!,
+            requestBody: {
+              valueInputOption: "RAW",
+              data: [
+                {
+                  range: `${sheetName}!${targetRange}`,
+                  values: [[seedValue]]
+                },
+                {
+                  range: `${sheetName}!${expectedCell}`,
+                  values: [[initialHelloTarget]]
+                }
+              ]
+            }
+          });
+
+          await waitForCellValue(expectedCell, initialHelloTarget);
+
+          const { data: contextData } = await script.scripts.run({
+            scriptId,
+            requestBody: {
+              function: "apiGetContext",
+              parameters: [
+                {
+                  spreadsheetId,
+                  sheetName,
+                  rangeA1: targetRange
+                }
+              ],
+              devMode: true
+            }
+          });
+
+          const contextResult = contextData?.response?.result as
+            | { ok: boolean; context: { spreadsheetId: string; sheetId: number; sheetName: string; activeRangeA1: string } }
+            | undefined;
+
+          expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
+
+          const applyRes = await fetch(`${functionsBase}/apply`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              clientUserId,
+              context: contextResult?.context
+            })
+          });
+          const applyJson = await applyRes.json();
+          expect(applyRes.ok, `apply failed: ${JSON.stringify(applyJson)}`).toBe(true);
+          const patchId = applyJson?.patchId as string;
+          expect(patchId).toBeTruthy();
+
+          const { data: afterApply } = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId!,
+            range: `${sheetName}!${expectedCell}`
+          });
+          const wroteValue = afterApply.values?.[0]?.[0] ?? "";
+          console.log("after apply", afterApply.values);
+          expect(wroteValue, `apply didn't write hello: ${JSON.stringify(afterApply.values)}`).toBe("hello");
+
+          const undoRes = await fetch(`${functionsBase}/undo`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ clientUserId, patchId })
+          });
+          const undoJson = await undoRes.json();
+          expect(undoRes.ok, `undo failed: ${JSON.stringify(undoJson)}`).toBe(true);
+          expect(undoJson?.ok).toBe(true);
+          console.log("undo response", undoJson);
+
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+
+          const { data: afterUndo } = await sheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId!,
+            range: `${sheetName}!${expectedCell}`
+          });
+          const restoredValue = afterUndo.values?.[0]?.[0] ?? "";
+          expect(restoredValue, `undo did not restore: ${JSON.stringify(afterUndo.values)}`).toBe(initialHelloTarget);
+        } finally {
+          const fallbackValues = originalCellValues.length > 0 ? originalCellValues : [[""]];
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId!,
+            range: `${sheetName}!${expectedCell}`,
             valueInputOption: "RAW",
-            data: [
-              {
-                range: `${sheetName}!${targetRange}`,
-                values: [[seedValue]]
-              },
-              {
-                range: `${sheetName}!${expectedCell}`,
-                values: [[initialHelloTarget]]
-              }
-            ]
-          }
-        });
-
-        const { data: contextData } = await script.scripts.run({
-          scriptId,
-          requestBody: {
-            function: "apiGetContext",
-            parameters: [
-              {
-                spreadsheetId,
-                sheetName,
-                rangeA1: targetRange
-              }
-            ],
-            devMode: true
-          }
-        });
-
-        const contextResult = contextData?.response?.result as
-          | { ok: boolean; context: { spreadsheetId: string; sheetId: number; sheetName: string; activeRangeA1: string } }
-          | undefined;
-
-        expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
-
-        const applyRes = await fetch(`${functionsBase}/apply`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            clientUserId,
-            context: contextResult?.context
-          })
-        });
-        const applyJson = await applyRes.json();
-        expect(applyRes.ok, `apply failed: ${JSON.stringify(applyJson)}`).toBe(true);
-        const patchId = applyJson?.patchId as string;
-        expect(patchId).toBeTruthy();
-
-        const { data: afterApply } = await sheets.spreadsheets.values.get({
-          spreadsheetId: spreadsheetId!,
-          range: `${sheetName}!${expectedCell}`
-        });
-        const wroteValue = afterApply.values?.[0]?.[0] ?? "";
-        expect(wroteValue).toBe("hello");
-
-        const undoRes = await fetch(`${functionsBase}/undo`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ clientUserId, patchId })
-        });
-        const undoJson = await undoRes.json();
-        expect(undoRes.ok, `undo failed: ${JSON.stringify(undoJson)}`).toBe(true);
-        expect(undoJson?.ok).toBe(true);
-
-        const { data: afterUndo } = await sheets.spreadsheets.values.get({
-          spreadsheetId: spreadsheetId!,
-          range: `${sheetName}!${expectedCell}`
-        });
-        const restoredValue = afterUndo.values?.[0]?.[0] ?? "";
-        expect(restoredValue).toBe(initialHelloTarget);
+            requestBody: { values: fallbackValues }
+          });
+        }
       },
       120000
     );

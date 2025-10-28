@@ -7,6 +7,7 @@
 * **Backend:** Supabase for auth, DB, Realtime, storage, Edge Functions
 * **Token security:** default **pgsodium + Vault** (RLS‑gated RPCs); fallback **app‑layer AES‑GCM**
 * **Cross‑sheet pulls:** user‑selectable **IMPORTRANGE (live link)** or **COPY_VALUES (snapshot)**; default live link with auto‑suggest snapshot on heavy ranges or failed auth
+* **SOP**: See `docs/phase-sop.md` for the checklist before marking complete.
 
 ---
 
@@ -19,7 +20,9 @@
 - **Phase 1.2 – pgsodium/Vault** ⏸️ *Deferred* — App-AES fallback in use; revisit when Vault extensions are provisioned.
 - **Phase 2 — Preview + Diff** ✅ (summary + gating in sidebar)
 - **Phase 2.5 — Audit Log + Undo** ✅ (AI_AUDIT_LOG sheet + undo endpoint)
-- **Phase 3 — CAS preflight** ⏳ *Next up*
+- **Phase 3 — CAS preflight** ✅ (fingerprints enforced)
+- **Phase 3.5 — Presence and Reservations** ⏸️ *Deferred*
+- **Phase 4 — Analyst skills v1** 🚧 *In progress*
 
 ---
 
@@ -816,7 +819,7 @@ Each phase ships a usable slice. Every step has a Definition of Done (DoD), a ma
 **Config**: None.
 **Risks**: Hash stability; use header + first/last N rows.
 
-### Phase 3.5 — Presence and Reservations
+### Phase 3.5 — Presence and Reservations *(Deferred)*
 
 **DoD**: Others see “Reserved by <name> for 20s” while previewing.
 **Manual test**: Two browsers → reservation badge appears.
@@ -826,11 +829,104 @@ Each phase ships a usable slice. Every step has a Definition of Done (DoD), a ma
 
 ### Phase 4 — Analyst skills v1
 
-**DoD**: Commands: grouped percentiles, pivot, chart, basic formatting.
-**Manual test**: Run on demo sheet; verify formulas and outputs.
-**Touch**: `planner/tool_schemas.ts`, `sheets-tools/pivots.ts`, `charts.ts`, `formulas.ts`.
-**Config**: None.
-**Risks**: Keep tool catalog tight.
+**Goal**: Deliver the first analyst toolbelt so users can request common aggregations, pivots, quick charts, and formatting touch-ups without writing formulas manually.
+
+**DoD**
+- Planner emits structured actions for at least four core skills:
+  1. Grouped percentiles and summary stats (min/median/max, optional filters)
+  2. Pivot table builder (rows, columns, values with aggregation)
+  3. Quick chart (column/line/chart with optional series selection)
+  4. Basic formatting (header bold, number format, conditional highlight)
+- Preview presents a human-readable summary for each skill and estimates inserted ranges or tabs.
+- Apply creates outputs on dedicated tabs (or adjacent blocks) with provenance entries and undo support.
+- Apps Script sidebar shows skill descriptions + confirmation before apply.
+
+**Manual test checklist**
+1. Run grouped percentile command on the demo sheet; verify summary table + formatting.
+2. Generate a pivot table with row/column/value selections; confirm pivot result and proper naming.
+3. Create a quick chart; chart appears on new sheet with descriptive title.
+4. Apply “format header + currency” command; verify formatting applied only to target range.
+5. Trigger undo after each skill; original sheet state restored.
+
+**Engineering tasks**
+- `planner/tool_schemas.ts`: define prompt templates, validation, and action structures per skill.
+- `packages/planner/src/planner.ts`: ensure plan includes `requestedReservations` for new outputs (e.g., new tabs) and references skills by ID.
+- `packages/sheets-tools/src/{pivots,charts,formulas,formatting}.ts`: implement helpers to translate actions into Sheets API requests.
+- `packages/executor/src/executor.ts`: extend executor to handle skill-specific action types, including multi-step operations (insert sheet → write values → format → create chart).
+- `packages/preview/src/preview.ts`: enrich preview summary with per-skill explanation and target ranges.
+- `supabase/functions/plan/index.ts` & `/preview` (if needed): thread new action payloads end-to-end.
+- `supabase/functions/apply/index.ts`: ensure CAS fingerprints cover new target ranges (especially new tabs) and that patches capture before/after slices.
+- `tests/phase4/`: add integration tests that run each skill against the demo sheet, assert outputs, and verify undo.
+- Update `apps/addon/Sidebar.html` to list available skills, accept user parameters (e.g., metric column), and display preview summaries.
+
+**Config / Env**
+- None new; reuse existing Supabase + Google credentials.
+- Demo sheet (`PHASE1_SPREADSHEET_ID`) should include sample data for pivots + charts.
+
+**Risks & Mitigations**
+- *Over-broad actions*: constrain planner prompts and add server-side validation on ranges/columns.
+- *Performance*: large pivots/charts may exceed quotas—log timing and add guardrails.
+- *Undo complexity*: ensure patches capture inserted sheets/tabs. Consider `AI_OUTPUT_*` tab naming convention.
+- *User confusion*: provide clear preview text and require confirmation before applying multi-step skills.
+
+**Artifacts**
+- Update `docs/phase-sop.md` with any skill-specific steps.
+- Record demo commands + screenshots in release notes.
+
+### Context management toolkit (cross-phase initiative)
+
+**Objectives**
+- Supply a modular context pipeline for the planner/executor while keeping ownership clear between user-managed and agent-managed layers.
+- Avoid context thrash by tracking tasks, memories, and compression in predictable components.
+
+**Context stack (ordered)**
+1. `user_query` — current user instruction.
+2. `chat_history` — rolling transcript (trimmed via adaptive window).
+3. `context_compression` — summaries generated when the session exceeds the LLM window; persisted with timestamps and source pointers.
+4. `local_agent_memory` — session-scoped notes captured automatically (e.g., “Pivot tab created on Sheet X”).
+5. `project_rules` — sheet/session rules the user controls (styling, business definitions, etc.). When the agent joins an existing sheet, snapshot current formatting/structure into these rules for later edits.
+6. `user_rules` — user-specific preferences (tone, formatting, naming conventions).
+7. `agent_rules` — developer-authored guardrails and non-negotiable constraints.
+8. `planner_todo` — lightweight task list maintained per session/project.
+
+> Global/long-term memory is intentionally deferred until we finalize retention/privacy guidelines.
+
+Each layer implements a `load/save/serialize` interface inside a new `packages/context-manager` module so we can reorder or swap segments through config.
+
+**Storage & APIs**
+- `project_rules`, `user_rules`, and `planner_todo` stored in Supabase tables with RLS (sheet + user scoped). CRUD only for v1; no team/org or versioning yet.
+- Agent-managed layers (`local_agent_memory`, `context_compression`) persisted with TTL policies; expose read-only previews in the UI.
+- Provide a `buildContext()` helper returning ordered fragments + metadata for planner/executor.
+- Add Supabase RPCs for editing rules and tasks with audit logging.
+
+**Sidebar UX**
+- Add a “Context” tab featuring:
+  - Planner todo list (drag/drop, mark complete).
+  - Editable cards for project + user rules (inline validation, history snapshot optional).
+  - Read-only panes for agent memory/compression with “Suggest cleanup” action.
+- Include neutral quick actions (e.g., “Apply house style guide”) that update the appropriate rules layer using the captured sheet styling.
+- Provide file upload (image, PDF to start) so users can drop external references that become part of the context stack.
+
+**Conflict handling**
+- When rules collide, the agent must surface the mismatch, request clarification, and either adjust its own plan or ask the user to update rules. Log tie-break decisions for traceability.
+
+**Telemetry & testing**
+- Add barebones telemetry that records context size, compression events, and memory usage inside Supabase (no external tooling yet).
+- Build a test harness that simulates context growth, triggers compression deterministically, and verifies the assembled context respects ordering.
+
+**Agent task loop**
+1. Decide whether to create/update the planner todo list; add items as needed.
+2. Describe the next task to the user and request approval when appropriate.
+3. Execute the task.
+4. Validate outputs; remediate issues if validation fails.
+5. Update the todo list and mark completed items.
+6. Summarize key outcomes with clickable cell/range references.
+
+### Notes on executor robustness
+
+- Continue using a deterministic Sheets executor that translates plan actions into explicit Sheets API calls. Extend it with modular “skill adapters” instead of letting the LLM issue raw API calls.
+- Introduce a validation layer that re-runs previews before apply to ensure assumptions hold.
+- Explore a hybrid approach where the LLM drafts fine-grained steps, but the executor sanitizes ranges, formulas, and sheet mutations before execution. Current SoTA LLMs still mis-specify formulas under pressure, so a manual executor remains necessary for reliability.
 
 ### Phase 5 — Cross‑sheet pulls: Live link (IMPORTRANGE)
 

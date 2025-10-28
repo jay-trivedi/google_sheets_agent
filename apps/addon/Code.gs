@@ -14,7 +14,7 @@ function onOpen() {
 
 function openSidebar() {
   const html = HtmlService.createHtmlOutputFromFile('Sidebar')
-    .setTitle('AI Analyst (Phase 1.1)');
+    .setTitle('AI Analyst (Phase 3)');
   SpreadsheetApp.getUi().showSidebar(html);
 }
 

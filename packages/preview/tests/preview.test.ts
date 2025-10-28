@@ -20,5 +20,6 @@ describe("computeLocalHelloPreview", () => {
     expect(result.changes[0].cell).toBe("Phase 1 sheet!E5");
     expect(result.changes[0].after).toBe("hello");
     expect(result.summary).toContain("E5");
+    expect(result.targetRangeA1).toBe("Phase 1 sheet!E5:E6");
   });
 });

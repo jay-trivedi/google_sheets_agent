@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/../apps/addon"
 
 push_with_config() {
   local suffix="$1"

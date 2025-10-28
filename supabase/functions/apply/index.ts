@@ -5,6 +5,7 @@ import { ensureAuditLogSheet, appendAuditRow } from "../_shared/audit_log.ts";
 import { svc } from "../_shared/db.ts";
 import { parseRangeA1, adjacentRight, rangeToA1 } from "../_shared/ranges.ts";
 import { buildSingleCellPatch } from "../../../packages/repositories/src/patches_repo.ts";
+import { createCasApi, Fingerprint, compareFingerprints } from "../../../packages/executor/src/cas.ts";
 
 type SheetContext = {
   spreadsheetId: string;
@@ -13,11 +14,17 @@ type SheetContext = {
   activeRangeA1: string; // e.g., "B2:D2"
 };
 
+type ApplyRequest = {
+  clientUserId: string;
+  context: SheetContext;
+  fingerprint?: Fingerprint;
+};
+
 httpServe(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors(req) });
 
-  const { clientUserId, context }: { clientUserId: string; context: SheetContext } = await req.json();
+  const { clientUserId, context, fingerprint }: ApplyRequest = await req.json();
   if (!clientUserId || !context) {
     return new Response(JSON.stringify({ error: "clientUserId and context required" }), {
       status: 400, headers: cors(req, { "Content-Type": "application/json" }),
@@ -41,6 +48,19 @@ httpServe(async (req) => {
   const targetSingleRange = { ...targetRange, width: selectionRange.width, height: selectionRange.height };
   const targetA1 = rangeToA1(targetSingleRange, context.sheetName);
   const targetEndCol = targetSingleRange.startCol + targetSingleRange.width - 1;
+
+  if (!fingerprint) {
+    return new Response(JSON.stringify({ error: "fingerprint required" }), {
+      status: 400,
+      headers: cors(req, { "Content-Type": "application/json" })
+    });
+  }
+  if (fingerprint.range && fingerprint.range !== targetA1) {
+    return new Response(JSON.stringify({ error: "fingerprint range mismatch", expected: targetA1, received: fingerprint.range }), {
+      status: 400,
+      headers: cors(req, { "Content-Type": "application/json" })
+    });
+  }
 
   // Ensure columns exist
   const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${context.spreadsheetId}?fields=sheets(properties(sheetId,title,gridProperties(columnCount)))`, {
@@ -73,16 +93,25 @@ httpServe(async (req) => {
   }
 
   const rangeWithSheet = targetA1;
-  const beforeRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${context.spreadsheetId}/values/${encodeURIComponent(rangeWithSheet)}?majorDimension=ROWS`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    }
-  );
-  const beforeJson = beforeRes.ok ? await beforeRes.json() : {};
-  const emptyRow = new Array(targetSingleRange.width).fill("");
-  const fallbackBefore = Array.from({ length: targetSingleRange.height }, () => [...emptyRow]);
-  const beforeValues = Array.isArray(beforeJson.values) && beforeJson.values.length > 0 ? beforeJson.values : fallbackBefore;
+  const cas = createCasApi({ accessToken });
+  const snapshot = await cas.snapshotRange({
+    spreadsheetId: context.spreadsheetId,
+    rangeA1: rangeWithSheet
+  });
+  const check = compareFingerprints(fingerprint, snapshot.fingerprint);
+  if (!check.ok) {
+    return new Response(JSON.stringify({
+      error: "E_STALE",
+      reason: check.reason,
+      fingerprint: snapshot.fingerprint,
+      changedAt: check.changedAt
+    }), {
+      status: 409,
+      headers: cors(req, { "Content-Type": "application/json" })
+    });
+  }
+
+  const beforeValues = snapshot.values;
   const afterValues = Array.from({ length: targetSingleRange.height }, () => new Array(targetSingleRange.width).fill("hello"));
 
   const updateBody = { values: afterValues };
@@ -127,7 +156,7 @@ httpServe(async (req) => {
     console.warn("Failed to append audit log:", auditError);
   }
 
-  return new Response(JSON.stringify({ ok: true, patchId, wroteA1: targetA1, update: j2 }), {
+  return new Response(JSON.stringify({ ok: true, patchId, wroteA1: targetA1, update: j2, fingerprint: snapshot.fingerprint }), {
     status: 200, headers: cors(req, { "Content-Type": "application/json" }),
   });
 });

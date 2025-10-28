@@ -25,7 +25,7 @@ function resolveFunctionsBase(): string | null {
       }
       return `${parsed.protocol}//${host}${parsed.port ? `:${parsed.port}` : ""}/functions/v1`.replace(/\/$/, "");
     } catch {
-      // fall through
+      // ignore parse errors
     }
   }
 
@@ -52,7 +52,7 @@ if (!clientUserId) additionalMissing.push("PHASE1_CLIENT_USER_ID (or fallback)")
 const allMissing = [...missingCore, ...additionalMissing];
 
 if (allMissing.length > 0) {
-  describe.skip("Phase 2.5 undo integration", () => {
+  describe.skip("Phase 3 CAS integration", () => {
     it.skip(`skipped because missing env vars: ${allMissing.join(", ")}`, () => {
       // noop
     });
@@ -89,19 +89,6 @@ if (allMissing.length > 0) {
   }
 
   const seedValue = process.env.PHASE1_SEED_VALUE || "target";
-  const initialHelloTarget = "initial";
-  async function waitForCellValue(range: string, expected: string, tries = 5) {
-    for (let attempt = 0; attempt < tries; attempt += 1) {
-      const { data } = await sheets.spreadsheets.values.get({
-        spreadsheetId: spreadsheetId!,
-        range: `${sheetName}!${range}`
-      });
-      const current = data.values?.[0]?.[0] ?? "";
-      if (current === expected) return;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    throw new Error(`Cell ${range} did not reach expected value ${expected}`);
-  }
 
   function nextColumn(a1: string): string {
     const match = /^([A-Z]+)(\d+)$/i.exec(a1.trim());
@@ -122,23 +109,37 @@ if (allMissing.length > 0) {
     return `${nextLetters}${row}`;
   }
 
-  const expectedCell = nextColumn(targetRange);
+  async function waitForCellValue(range: string, expected: string, tries = 5) {
+    for (let attempt = 0; attempt < tries; attempt += 1) {
+      const { data } = await sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId!,
+        range: `${sheetName}!${range}`
+      });
+      const current = data.values?.[0]?.[0] ?? "";
+      if (current === expected) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`Cell ${range} did not reach expected value ${expected}`);
+  }
 
-  describe("Phase 2.5 undo integration", () => {
+  const targetCell = nextColumn(targetRange);
+
+  describe("Phase 3 CAS integration", () => {
     beforeAll(async () => {
       await jwt.authorize();
     }, 30000);
 
     it(
-      "restores previous value via undo endpoint",
+      "detects stale fingerprint and succeeds after re-preview",
       async () => {
-        const originalCellRes = await sheets.spreadsheets.values.get({
+        const { data: originalCell } = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId!,
-          range: `${sheetName}!${expectedCell}`
+          range: `${sheetName}!${targetCell}`
         });
-        const originalCellValues = originalCellRes.values ?? [];
+        const originalValues = originalCell.values ?? [];
 
         try {
+          // Prime data for deterministic run
           await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: spreadsheetId!,
             requestBody: {
@@ -149,14 +150,13 @@ if (allMissing.length > 0) {
                   values: [[seedValue]]
                 },
                 {
-                  range: `${sheetName}!${expectedCell}`,
-                  values: [[initialHelloTarget]]
+                  range: `${sheetName}!${targetCell}`,
+                  values: [["primed"]]
                 }
               ]
             }
           });
-
-          await waitForCellValue(expectedCell, initialHelloTarget);
+          await waitForCellValue(targetCell, "primed");
 
           const { data: contextData } = await script.scripts.run({
             scriptId,
@@ -172,77 +172,74 @@ if (allMissing.length > 0) {
               devMode: true
             }
           });
-
           const contextResult = contextData?.response?.result as
             | { ok: boolean; context: { spreadsheetId: string; sheetId: number; sheetName: string; activeRangeA1: string } }
             | undefined;
 
           expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
+          const context = contextResult!.context;
 
           const previewRes = await fetch(`${functionsBase}/preview`, {
             method: "POST",
             headers,
-            body: JSON.stringify({
-              clientUserId,
-              context: contextResult?.context
-            })
+            body: JSON.stringify({ clientUserId, context })
           });
           const previewJson = await previewRes.json();
           expect(previewRes.ok, `preview failed: ${JSON.stringify(previewJson)}`).toBe(true);
           const fingerprint = previewJson?.fingerprint;
-          expect(fingerprint, "fingerprint missing from preview").toBeTruthy();
+          expect(fingerprint, "preview missing fingerprint").toBeTruthy();
+
+          // Simulate a teammate edit
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId!,
+            range: `${sheetName}!${targetCell}`,
+            valueInputOption: "RAW",
+            requestBody: { values: [["teammate edit"]] }
+          });
+          await waitForCellValue(targetCell, "teammate edit");
+
+          const staleApply = await fetch(`${functionsBase}/apply`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ clientUserId, context, fingerprint })
+          });
+          const staleJson = await staleApply.json();
+          expect(staleApply.status).toBe(409);
+          expect(staleJson?.error).toBe("E_STALE");
+          expect(staleJson?.reason).toBeDefined();
+
+          // Re-preview to grab fresh fingerprint and try again
+          const secondPreviewRes = await fetch(`${functionsBase}/preview`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ clientUserId, context })
+          });
+          const secondPreviewJson = await secondPreviewRes.json();
+          expect(secondPreviewRes.ok, `second preview failed: ${JSON.stringify(secondPreviewJson)}`).toBe(true);
+          const freshFingerprint = secondPreviewJson?.fingerprint;
+          expect(freshFingerprint, "fresh fingerprint missing").toBeTruthy();
 
           const applyRes = await fetch(`${functionsBase}/apply`, {
             method: "POST",
             headers,
-            body: JSON.stringify({
-              clientUserId,
-              context: contextResult?.context,
-              fingerprint
-            })
+            body: JSON.stringify({ clientUserId, context, fingerprint: freshFingerprint })
           });
           const applyJson = await applyRes.json();
           expect(applyRes.ok, `apply failed: ${JSON.stringify(applyJson)}`).toBe(true);
-          const patchId = applyJson?.patchId as string;
-          expect(patchId).toBeTruthy();
+          expect(applyJson?.ok).toBe(true);
 
-          const { data: afterApply } = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetId!,
-            range: `${sheetName}!${expectedCell}`
-          });
-          const wroteValue = afterApply.values?.[0]?.[0] ?? "";
-          console.log("after apply", afterApply.values);
-          expect(wroteValue, `apply didn't write hello: ${JSON.stringify(afterApply.values)}`).toBe("hello");
-
-          const undoRes = await fetch(`${functionsBase}/undo`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ clientUserId, patchId })
-          });
-          const undoJson = await undoRes.json();
-          expect(undoRes.ok, `undo failed: ${JSON.stringify(undoJson)}`).toBe(true);
-          expect(undoJson?.ok).toBe(true);
-          console.log("undo response", undoJson);
-
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-
-          const { data: afterUndo } = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetId!,
-            range: `${sheetName}!${expectedCell}`
-          });
-          const restoredValue = afterUndo.values?.[0]?.[0] ?? "";
-          expect(restoredValue, `undo did not restore: ${JSON.stringify(afterUndo.values)}`).toBe(initialHelloTarget);
+          await waitForCellValue(targetCell, "hello");
         } finally {
-          const fallbackValues = originalCellValues.length > 0 ? originalCellValues : [[""]];
+          const fallback = originalValues.length > 0 ? originalValues : [[""]];
           await sheets.spreadsheets.values.update({
             spreadsheetId: spreadsheetId!,
-            range: `${sheetName}!${expectedCell}`,
+            range: `${sheetName}!${targetCell}`,
             valueInputOption: "RAW",
-            requestBody: { values: fallbackValues }
+            requestBody: { values: fallback }
           });
         }
       },
-      120000
+      180000
     );
   });
 }

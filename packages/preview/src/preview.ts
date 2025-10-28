@@ -15,6 +15,7 @@ export type PreviewResult = {
   summary: string;
   changeCount: number;
   changes: PreviewChange[];
+  targetRangeA1: string;
 };
 
 function colToIndex(letter: string): number {
@@ -37,22 +38,30 @@ function indexToCol(n: number): string {
   return s;
 }
 
-function parseActiveRange(rangeA1: string): { startCol: number; startRow: number; width: number } {
+function parseActiveRange(rangeA1: string): { startCol: number; startRow: number; width: number; height: number } {
   const match = /^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i.exec(rangeA1.trim());
   if (!match) throw new Error(`Unsupported A1 range: ${rangeA1}`);
   const startCol = colToIndex(match[1]);
   const startRow = parseInt(match[2], 10);
   const endCol = match[3] ? colToIndex(match[3]) : startCol;
-  return { startCol, startRow, width: endCol - startCol + 1 };
+  const endRow = match[4] ? parseInt(match[4], 10) : startRow;
+  return { startCol, startRow, width: endCol - startCol + 1, height: endRow - startRow + 1 };
 }
 
 export function computeLocalHelloPreview(context: SheetContext): PreviewResult {
-  const { startCol, startRow, width } = parseActiveRange(context.activeRangeA1);
+  const { startCol, startRow, width, height } = parseActiveRange(context.activeRangeA1);
   const targetCol = startCol + width;
-  const targetCell = `${indexToCol(targetCol)}${startRow}`;
+  const targetRow = startRow;
+  const targetColEnd = targetCol + width - 1;
+  const targetRowEnd = targetRow + height - 1;
+  const targetStartA1 = `${indexToCol(targetCol)}${targetRow}`;
+  const targetEndA1 = `${indexToCol(targetColEnd)}${targetRowEnd}`;
+  const targetRangeLocal =
+    width === 1 && height === 1 ? targetStartA1 : `${targetStartA1}:${targetEndA1}`;
+  const targetQualified = context.sheetName ? `${context.sheetName}!${targetRangeLocal}` : targetRangeLocal;
 
   const change: PreviewChange = {
-    cell: context.sheetName ? `${context.sheetName}!${targetCell}` : targetCell,
+    cell: context.sheetName ? `${context.sheetName}!${targetStartA1}` : targetStartA1,
     before: undefined,
     after: "hello"
   };
@@ -62,6 +71,7 @@ export function computeLocalHelloPreview(context: SheetContext): PreviewResult {
   return {
     summary: `${summary.description}`,
     changeCount: summary.changeCount,
-    changes: [change]
+    changes: [change],
+    targetRangeA1: targetQualified
   };
 }

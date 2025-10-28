@@ -93,6 +93,7 @@
         }
 
         let lastPreview = null;
+        let lastFingerprint = null;
         let lastContextSignature = null;
         let lastPatchId = null;
 
@@ -102,6 +103,7 @@
 
         function resetPreviewState() {
           lastPreview = null;
+          lastFingerprint = null;
           lastContextSignature = null;
           btnBackendHello.disabled = true;
           lastPatchId = null;
@@ -165,6 +167,7 @@
               return;
             }
             lastPreview = json.preview;
+            lastFingerprint = json.fingerprint || null;
             lastContextSignature = contextSignature(ctx);
             btnBackendHello.disabled = false;
             print({ preview: json.preview, ctx });
@@ -196,11 +199,21 @@
               btnBackendHello.disabled = true;
               return;
             }
+            if (!lastFingerprint) {
+              err("Preview missing fingerprint. Re-run preview.");
+              btnBackendHello.disabled = true;
+              return;
+            }
             const res = await fetch(fn('/apply'), {
               method: 'POST', headers: headers(),
-              body: JSON.stringify({ clientUserId, context: ctx })
+              body: JSON.stringify({ clientUserId, context: ctx, fingerprint: lastFingerprint })
             });
             const json = await res.json();
+            if (!res.ok || json?.error) {
+              print({ status: res.status, error: json?.error ?? "Apply failed", reason: json?.reason, changedAt: json?.changedAt });
+              resetPreviewState();
+              return;
+            }
             print(json);
             resetPreviewState();
             if (json?.patchId) {

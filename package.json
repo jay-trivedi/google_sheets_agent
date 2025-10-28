@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
+    "test:phase0": "vitest run --config vitest.config.integration.ts --reporter verbose",
     "test:supabase": "deno test --allow-env --allow-net supabase/functions/tests",
     "lint": "pnpm -r lint",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -22,11 +23,14 @@
     "clasp:pull": "cd apps/addon && npx clasp pull"
   },
   "devDependencies": {
+    "@google/clasp": "^3.1.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vitest/coverage-v8": "^4.0.4",
+    "dotenv": "^17.2.3",
     "eslint": "^8.0.0",
+    "googleapis": "^164.1.0",
     "prettier": "^3.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.0.0",

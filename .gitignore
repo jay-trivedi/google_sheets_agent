@@ -81,6 +81,7 @@ supabase/.env
 .pnp.*
 
 # Apps Script
+.clasp.json
 apps/addon/.clasp.json
 
 # Secrets and keys

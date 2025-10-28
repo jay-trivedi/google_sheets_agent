@@ -23,11 +23,50 @@ function openSidebar() {
  * Used by the sidebar to send to the backend /apply function.
  */
 function getContext() {
-  const ss = SpreadsheetApp.getActive();
-  const sh = ss.getActiveSheet();
-  const sheetName = sh.getName();
+  return _buildContext({});
+}
+
+/**
+ * Execution API entry point. Accepts optional overrides so automated tests
+ * can target specific spreadsheets/sheets/ranges without relying on UI state.
+ *
+ * @param {{spreadsheetId?: string, sheetName?: string, rangeA1?: string}} payload
+ */
+function apiGetContext(payload) {
+  const options = payload || {};
+  return {
+    ok: true,
+    context: _buildContext({
+      spreadsheetId: options.spreadsheetId,
+      sheetName: options.sheetName,
+      rangeA1: options.rangeA1
+    })
+  };
+}
+
+/**
+ * Internal helper so sidebar + Execution API share the exact same logic.
+ */
+function _buildContext(options) {
+  const spreadsheetId = options && options.spreadsheetId;
+  const sheetName = options && options.sheetName;
+  const rangeA1 = options && options.rangeA1;
+
+  const ss = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActive();
+
+  let sh = null;
+  if (sheetName) {
+    sh = ss.getSheetByName(sheetName);
+    if (!sh) {
+      throw new Error('Sheet not found: ' + sheetName);
+    }
+  } else {
+    sh = ss.getActiveSheet() || ss.getSheets()[0];
+  }
+
   const sheetId = sh.getSheetId();
-  const spreadsheetId = ss.getId();
+  const resolvedSheetName = sh.getName();
+  const resolvedSpreadsheetId = ss.getId();
 
   const lastRow = Math.max(1, sh.getLastRow());
   const lastCol = Math.max(1, sh.getLastColumn());
@@ -36,7 +75,12 @@ function getContext() {
   const headers = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
 
   // Active selection (fallback to a small block if nothing selected)
-  let rng = sh.getActiveRange();
+  let rng = null;
+  if (rangeA1) {
+    rng = sh.getRange(rangeA1);
+  } else {
+    rng = sh.getActiveRange();
+  }
   if (!rng) {
     rng = sh.getRange(1, 1, Math.min(20, lastRow || 1), Math.min(10, lastCol || 1));
   }
@@ -49,9 +93,9 @@ function getContext() {
   const sample = sh.getRange(rng.getRow(), rng.getColumn(), sampleRows, sampleCols).getValues();
 
   return {
-    spreadsheetId,
+    spreadsheetId: resolvedSpreadsheetId,
     sheetId,
-    sheetName,
+    sheetName: resolvedSheetName,
     activeRangeA1: rng.getA1Notation(),
     activeRowCount: rng.getNumRows(),
     activeColumnCount: rng.getNumColumns(),

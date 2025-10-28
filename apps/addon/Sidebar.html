@@ -69,7 +69,13 @@
         }
 
         function print(obj) { out.textContent = JSON.stringify(obj, null, 2); }
-        function err(e) { print({ error: String(e && e.message || e) }); }
+        function err(e) {
+          if (e instanceof Error) {
+            print({ error: e.message, stack: e.stack });
+          } else {
+            print({ error: String(e && e.message || e) });
+          }
+        }
         function headers() {
           return {
             'Content-Type': 'application/json',
@@ -132,7 +138,18 @@
               method: 'POST', headers: headers(),
               body: JSON.stringify({ instruction: 'ping', from: 'sidebar' })
             });
-            const json = await res.json();
+            const text = await res.text();
+            if (!res.ok) {
+              print({ status: res.status, statusText: res.statusText, body: text });
+              return;
+            }
+            let json;
+            try {
+              json = JSON.parse(text);
+            } catch (parseErr) {
+              print({ status: res.status, raw: text, parseError: String(parseErr) });
+              return;
+            }
             print(json);
           } catch (e) { err(e); }
         });

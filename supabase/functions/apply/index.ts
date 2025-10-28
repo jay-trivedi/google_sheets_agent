@@ -6,6 +6,7 @@ import { open } from "../_shared/crypto.ts";
 type SheetContext = {
   spreadsheetId: string;
   sheetId: number;
+  sheetName: string;
   activeRangeA1: string; // e.g., "B2:D2"
 };
 
@@ -59,7 +60,20 @@ httpServe(async (req) => {
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: cors(req, { "Content-Type": "application/json" }) });
   if (!data) return new Response(JSON.stringify({ error: "No token for user. Connect Google first." }), { status: 401, headers: cors(req, { "Content-Type": "application/json" }) });
 
-  const refreshToken = await open(data.sealed_refresh_token);
+  const sealed = await open(data.sealed_refresh_token);
+  let refreshToken: string | null = null;
+  try {
+    const tokenJson = JSON.parse(sealed);
+    refreshToken = tokenJson?.refresh_token ?? null;
+  } catch {
+    refreshToken = sealed;
+  }
+  if (!refreshToken) {
+    return new Response(JSON.stringify({ error: "Stored token missing refresh_token" }), {
+      status: 400,
+      headers: cors(req, { "Content-Type": "application/json" })
+    });
+  }
   const accessToken = await refreshAccessToken(refreshToken);
 
   // Compute target cell (right of selection, first row)
@@ -99,7 +113,8 @@ httpServe(async (req) => {
 
   // Write the value
   const updateBody = { values: [["hello"]] };
-  const r2 = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${context.spreadsheetId}/values/${encodeURIComponent(targetA1)}:update?valueInputOption=RAW`, {
+  const rangeWithSheet = context.sheetName ? `${context.sheetName}!${targetA1}` : targetA1;
+  const r2 = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${context.spreadsheetId}/values/${encodeURIComponent(rangeWithSheet)}?valueInputOption=RAW`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(updateBody),

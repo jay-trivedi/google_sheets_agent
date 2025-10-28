@@ -25,7 +25,7 @@ httpServe(async (req) => {
   const j = await r.json();
   if (!j.refresh_token) return html("No refresh_token (ensure access_type=offline & prompt=consent)");
 
-  const sealed_refresh_token = await seal(j.refresh_token);
+  const sealed_refresh_token = await seal(JSON.stringify(j));
   const supabase = svc();
   const { error } = await supabase.from("oauth_tokens").upsert({
     user_id: state, provider: "google", sealed_refresh_token, updated_at: new Date().toISOString(),

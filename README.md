@@ -29,6 +29,13 @@ Create a `.env.local` at the repo root (already used by Supabase CLI / Add-on). 
     - `PHASE1_SPREADSHEET_ID` — seed spreadsheet for the Phase 1 test (falls back to `PHASE0_SPREADSHEET_ID`).
     - `PHASE1_SHEET_NAME`, `PHASE1_TARGET_RANGE` — explicit tab/range for the Phase 1 scenario.
     - `PHASE1_SEED_VALUE` — value prefilled before running the local write (`default: "target"`).
+- **Backend executor** (`/apply` Edge Function) additionally needs:
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URL` — OAuth client configured with redirect `.../functions/v1/oauth-callback`.
+  - `TOKENS_KEK_V1` — base64-encoded 128/192/256-bit key used for AES-GCM sealing of refresh tokens.
+  - `SUPABASE_SERVICE_ROLE_KEY` — used by Edge Functions to access `oauth_tokens`.
+  - `PHASE1_CLIENT_USER_ID` — sidebar-generated client user id that has already completed OAuth (used by backend apply test).
+  - Optional: `PHASE1_EXPECTED_HELLO` if you changed the backend-written value (defaults to `hello`).
+  - Note: the tests derive `SUPABASE_FUNCTIONS_URL` automatically from `SUPABASE_URL`, `SB_URL`, or `SB_PROJECT_REF`; override if you need a custom host.
 
 Because the Deno suite targets the shared dev project, keep test data isolated (IDs prefixed with `test_`) and clean up as needed.
 

@@ -48,9 +48,24 @@ if (missing.length > 0) {
       const maybeNumber = Number(h);
       return Number.isNaN(maybeNumber) ? h : maybeNumber;
     });
-  const expectedSample = process.env.PHASE0_EXPECTED_SAMPLE
-    ? (JSON.parse(process.env.PHASE0_EXPECTED_SAMPLE) as unknown[][])
-    : undefined;
+  const expectedSample = (() => {
+    const raw = process.env.PHASE0_EXPECTED_SAMPLE;
+    if (!raw) return undefined;
+    const trimmed = raw.trim();
+    const candidates = [trimmed];
+    if ((trimmed.startsWith("'") && trimmed.endsWith("'")) || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      candidates.push(trimmed.slice(1, -1));
+    }
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        return JSON.parse(candidate) as unknown[][];
+      } catch {
+        // try next candidate
+      }
+    }
+    throw new Error(`PHASE0_EXPECTED_SAMPLE is not valid JSON: ${raw}`);
+  })();
   const expectedRange = process.env.PHASE0_EXPECTED_ACTIVE_RANGE || undefined;
 
   const scopes = [

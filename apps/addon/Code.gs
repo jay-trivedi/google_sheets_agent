@@ -52,17 +52,7 @@ function _buildContext(options) {
   const sheetName = options && options.sheetName;
   const rangeA1 = options && options.rangeA1;
 
-  const ss = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : SpreadsheetApp.getActive();
-
-  let sh = null;
-  if (sheetName) {
-    sh = ss.getSheetByName(sheetName);
-    if (!sh) {
-      throw new Error('Sheet not found: ' + sheetName);
-    }
-  } else {
-    sh = ss.getActiveSheet() || ss.getSheets()[0];
-  }
+  const { ss, sh } = _resolveSheetAndSelection({ spreadsheetId, sheetName });
 
   const sheetId = sh.getSheetId();
   const resolvedSheetName = sh.getName();
@@ -75,15 +65,7 @@ function _buildContext(options) {
   const headers = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [];
 
   // Active selection (fallback to a small block if nothing selected)
-  let rng = null;
-  if (rangeA1) {
-    rng = sh.getRange(rangeA1);
-  } else {
-    rng = sh.getActiveRange();
-  }
-  if (!rng) {
-    rng = sh.getRange(1, 1, Math.min(20, lastRow || 1), Math.min(10, lastCol || 1));
-  }
+  const rng = _resolveRange({ sh, rangeA1, lastRow, lastCol });
 
   // Clamp sample size for safety
   const maxRows = 50;
@@ -109,13 +91,19 @@ function _buildContext(options) {
  * If you still have a "Write hello locally" button, keep this.
  * Otherwise, you can delete this function.
  */
-function applyLocalWriteHello() {
-  const ss = SpreadsheetApp.getActive();
-  const sh = ss.getActiveSheet();
-  let rng = sh.getActiveRange();
-  if (!rng) {
-    throw new Error('Select a range first.');
-  }
+function applyLocalWriteHello(options) {
+  const opts = options || {};
+  const { ss, sh } = _resolveSheetAndSelection({
+    spreadsheetId: opts.spreadsheetId,
+    sheetName: opts.sheetName,
+  });
+
+  const rng = _resolveRange({
+    sh,
+    rangeA1: opts.rangeA1,
+    lastRow: Math.max(1, sh.getLastRow()),
+    lastCol: Math.max(1, sh.getLastColumn()),
+  });
 
   const startRow = rng.getRow();
   const startCol = rng.getColumn();
@@ -135,6 +123,35 @@ function applyLocalWriteHello() {
     wroteValue: 'hello',
     selectionA1: rng.getA1Notation()
   };
+}
+
+function _resolveSheetAndSelection(opts) {
+  const ss = opts.spreadsheetId ? SpreadsheetApp.openById(opts.spreadsheetId) : SpreadsheetApp.getActive();
+
+  let sh = null;
+  if (opts.sheetName) {
+    sh = ss.getSheetByName(opts.sheetName);
+    if (!sh) {
+      throw new Error('Sheet not found: ' + opts.sheetName);
+    }
+  } else {
+    sh = ss.getActiveSheet() || ss.getSheets()[0];
+  }
+
+  return { ss, sh };
+}
+
+function _resolveRange(opts) {
+  let rng = null;
+  if (opts.rangeA1) {
+    rng = opts.sh.getRange(opts.rangeA1);
+  } else {
+    rng = opts.sh.getActiveRange();
+  }
+  if (!rng) {
+    rng = opts.sh.getRange(1, 1, Math.min(20, opts.lastRow || 1), Math.min(10, opts.lastCol || 1));
+  }
+  return rng;
 }
 
 /** Helpers for A1 conversion (used by optional local write) */

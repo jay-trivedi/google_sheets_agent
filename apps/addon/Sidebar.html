@@ -23,6 +23,7 @@
     <div class="wrap">
       <div class="row">
         <button class="primary" id="btnRead">Read context</button>
+        <button id="btnLocalHello">Write “hello” locally</button>
         <button id="btnBackendHello">Write “hello” via backend</button>
         <button id="btnClear">Clear</button>
       </div>
@@ -54,6 +55,7 @@
         const out = document.getElementById('out');
         const btnRead = document.getElementById('btnRead');
         const btnClear = document.getElementById('btnClear');
+        const btnLocalHello = document.getElementById('btnLocalHello');
         const btnBackendHello = document.getElementById('btnBackendHello');
         const btnConnect = document.getElementById('btnConnect');
         const btnPing = document.getElementById('btnPing');
@@ -109,6 +111,15 @@
           } catch (e) { err(e); }
         });
 
+        // Apply via Apps Script locally
+        btnLocalHello.addEventListener('click', function () {
+          out.textContent = 'Applying locally…';
+          google.script.run
+            .withSuccessHandler(function (result) { print({ mode: 'local', result }); })
+            .withFailureHandler(err)
+            .applyLocalWriteHello();
+        });
+
         // Apply via backend: posts clientUserId + context to /apply
         btnBackendHello.addEventListener('click', async function () {
           try {
@@ -153,7 +164,6 @@
             print(json);
           } catch (e) { err(e); }
         });
-
         btnClear.addEventListener('click', function () { out.textContent = ''; });
       })();
     </script>

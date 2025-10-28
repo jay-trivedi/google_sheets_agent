@@ -1,5 +1,8 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { google } from "googleapis";
+import { config } from "dotenv";
+
+config({ path: ".env.local" });
 
 type ContextResponse = {
   ok: boolean;
@@ -86,13 +89,13 @@ if (missing.length > 0) {
           ]
         };
 
-      const { data } = await script.scripts.run({
-        scriptId,
-        requestBody: {
-          ...requestBody,
-          devMode: true
-        }
-      });
+        const { data } = await script.scripts.run({
+          scriptId,
+          requestBody: {
+            ...requestBody,
+            devMode: true
+          }
+        });
 
         const result = data?.response?.result as ContextResponse | undefined;
         expect(result, "Apps Script did not return a result").toBeTruthy();

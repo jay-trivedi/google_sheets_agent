@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "supabase functions serve --env-file .env.local",
     "build": "pnpm -r build",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:coverage": "vitest run --coverage",
+    "test": "vitest run --config vitest.config.integration.ts --reporter verbose",
+    "test:watch": "vitest watch --config vitest.config.integration.ts",
+    "test:coverage": "vitest run --config vitest.config.integration.ts --coverage",
     "test:phase0": "vitest run --config vitest.config.integration.ts --reporter verbose",
     "test:supabase": "deno test --allow-env --allow-net --allow-read supabase/functions/tests",
     "lint": "pnpm -r lint",

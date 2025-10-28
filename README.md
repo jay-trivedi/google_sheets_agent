@@ -1,11 +1,10 @@
 ## Testing
 
-All JavaScript/TypeScript packages share a Vitest harness and a Deno suite that hits the deployed Supabase dev stack.
+The repository ships with Vitest suites that hit the live Apps Script project plus a Deno suite that targets the deployed Supabase dev stack.
 
-- `pnpm test` — run Vitest once across `packages/**/tests/*.test.ts` (fast unit smoke tests).
-- `pnpm test:watch` — watch mode for local TDD.
-- `pnpm test:coverage` — Vitest run with V8 coverage output.
-- `pnpm test:phase0` — Exercise the Phase 0 add-on flow against the live seed Sheet via Apps Script Execution API.
+- `pnpm test` — run the full Apps Script integration suite (Phase 0 + Phase 1) via Execution API. Requires network access and the env vars below.
+- `pnpm test:watch` — watch mode for the integration suite (same config as `pnpm test`).
+- `pnpm test:coverage` — Vitest integration run with V8 coverage output.
 - `pnpm test:supabase` — Deno tests that exercise deployed Edge Functions (requires network + Supabase dev env vars).
 
 ### Environment
@@ -15,7 +14,7 @@ Create a `.env.local` at the repo root (already used by Supabase CLI / Add-on). 
 - `SUPABASE_FUNCTIONS_URL` — base URL for your dev functions, e.g. `https://<ref>.functions.supabase.co`.
 - `SUPABASE_ANON_KEY` (or `SB_ANON_KEY`) — anon key for authenticated calls.
 - Any additional secrets the remote functions require (e.g. Google OAuth, OpenAI). For service-role tests add `SUPABASE_SERVICE_ROLE_KEY`.
-- **Phase 0 integration** (`pnpm test:phase0`) additionally expects:
+- **Apps Script integration** (`pnpm test`) additionally expects:
   - `GAS_CLIENT_EMAIL`, `GAS_PRIVATE_KEY` — service account credentials with access to the add-on project + seed sheets.
   - `GAS_SCRIPT_ID` — Apps Script project ID that hosts the add-on code.
   - `GAS_DEPLOYMENT_ID` — optional; Execution API deployment to run (omit to use `devMode`).
@@ -26,6 +25,10 @@ Create a `.env.local` at the repo root (already used by Supabase CLI / Add-on). 
     - `PHASE0_EXPECTED_ACTIVE_RANGE` — asserted range string.
     - `PHASE0_EXPECTED_HEADERS` — pipe-separated header row (e.g. `Name|Team|Total`).
     - `PHASE0_EXPECTED_SAMPLE` — JSON string for the expected sample rows (e.g. `[["Alice","Ops"],["Bob","Sales"]]`).
+  - Phase 1 variations can override Phase 0 values with:
+    - `PHASE1_SPREADSHEET_ID` — seed spreadsheet for the Phase 1 test (falls back to `PHASE0_SPREADSHEET_ID`).
+    - `PHASE1_SHEET_NAME`, `PHASE1_TARGET_RANGE` — explicit tab/range for the Phase 1 scenario.
+    - `PHASE1_SEED_VALUE` — value prefilled before running the local write (`default: "target"`).
 
 Because the Deno suite targets the shared dev project, keep test data isolated (IDs prefixed with `test_`) and clean up as needed.
 

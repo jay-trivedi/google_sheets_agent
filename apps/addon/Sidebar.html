@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Analyst (Phase 1.1)</title>
+    <title>AI Analyst (Phase 2.5)</title>
     <style>
       body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
       header { padding: 12px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
@@ -19,13 +19,14 @@
     </style>
   </head>
   <body>
-    <header>AI Analyst — Phase 2.0</header>
+    <header>AI Analyst — Phase 2.5</header>
     <div class="wrap">
       <div class="row">
         <button class="primary" id="btnRead">Read context</button>
         <button id="btnPreview">Preview change</button>
         <button id="btnLocalHello">Write “hello” locally</button>
         <button id="btnBackendHello" disabled>Apply via backend</button>
+        <button id="btnUndo" disabled>Undo last apply</button>
         <button id="btnClear">Clear</button>
       </div>
 
@@ -48,7 +49,7 @@
         <small class="hint">Optional sanity check.</small>
       </div>
 
-      <pre id="out">1) Connect Google → finish OAuth in new tab.\n2) Read context.\n3) Preview change → confirm summary.\n4) Apply via backend.\n\nBase must point to your functions (dev default shown).</pre>
+      <pre id="out">1) Connect Google → finish OAuth in new tab.\n2) Read context.\n3) Preview change → confirm summary.\n4) Apply via backend.\n5) Undo if needed (writes to AI_AUDIT_LOG).\n\nBase must point to your functions (dev default shown).</pre>
     </div>
 
     <script>
@@ -59,6 +60,7 @@
         const btnPreview = document.getElementById('btnPreview');
         const btnLocalHello = document.getElementById('btnLocalHello');
         const btnBackendHello = document.getElementById('btnBackendHello');
+        const btnUndo = document.getElementById('btnUndo');
         const btnConnect = document.getElementById('btnConnect');
         const btnPing = document.getElementById('btnPing');
         const baseUrl = document.getElementById('baseUrl');
@@ -92,6 +94,7 @@
 
         let lastPreview = null;
         let lastContextSignature = null;
+        let lastPatchId = null;
 
         function contextSignature(ctx) {
           return `${ctx.spreadsheetId}:${ctx.sheetId}:${ctx.activeRangeA1}`;
@@ -101,6 +104,8 @@
           lastPreview = null;
           lastContextSignature = null;
           btnBackendHello.disabled = true;
+          lastPatchId = null;
+          btnUndo.disabled = true;
         }
 
         // Read current sheet context via Apps Script
@@ -198,7 +203,37 @@
             const json = await res.json();
             print(json);
             resetPreviewState();
+            if (json?.patchId) {
+              lastPatchId = json.patchId;
+              btnUndo.disabled = false;
+            }
           } catch (e) { err(e); }
+        });
+
+        btnUndo.addEventListener('click', async function () {
+          if (!lastPatchId) {
+            err('No patch to undo.');
+            btnUndo.disabled = true;
+            return;
+          }
+          try {
+            out.textContent = 'Undoing…';
+            const res = await fetch(fn('/undo'), {
+              method: 'POST',
+              headers: headers(),
+              body: JSON.stringify({ clientUserId, patchId: lastPatchId })
+            });
+            const json = await res.json();
+            if (!res.ok) {
+              err(json?.error || `Undo failed (${res.status})`);
+              return;
+            }
+            print({ undo: json });
+            lastPatchId = null;
+            btnUndo.disabled = true;
+          } catch (e) {
+            err(e);
+          }
         });
 
         // Optional: ping /plan

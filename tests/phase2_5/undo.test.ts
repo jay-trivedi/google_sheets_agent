@@ -4,6 +4,8 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
+const requiredEnv = ["GAS_CLIENT_EMAIL", "GAS_PRIVATE_KEY", "GAS_SCRIPT_ID", "GAS_IMPERSONATE_EMAIL"] as const;
+
 function resolveFunctionsBase(): string | null {
   const direct = process.env.SUPABASE_FUNCTIONS_URL;
   if (direct) return direct.replace(/\/$/, "");
@@ -23,7 +25,7 @@ function resolveFunctionsBase(): string | null {
       }
       return `${parsed.protocol}//${host}${parsed.port ? `:${parsed.port}` : ""}/functions/v1`.replace(/\/$/, "");
     } catch {
-      // fall through to project ref
+      // fall through
     }
   }
 
@@ -31,30 +33,26 @@ function resolveFunctionsBase(): string | null {
   if (ref) {
     return `https://${ref}.functions.supabase.co`;
   }
-
   return null;
 }
 
-const requiredEnv = ["GAS_CLIENT_EMAIL", "GAS_PRIVATE_KEY", "GAS_SCRIPT_ID", "GAS_IMPERSONATE_EMAIL"] as const;
-
 const missingCore = requiredEnv.filter((key) => !process.env[key]);
-const clientUserId =
-  process.env.PHASE1_CLIENT_USER_ID || process.env.PHASE0_CLIENT_USER_ID || process.env.TEST_CLIENT_USER_ID;
 const spreadsheetId = process.env.PHASE1_SPREADSHEET_ID || process.env.PHASE0_SPREADSHEET_ID;
 const sheetName = process.env.PHASE1_SHEET_NAME || process.env.PHASE0_SHEET_NAME;
 const targetRange = process.env.PHASE1_TARGET_RANGE || "A1";
 
 const additionalMissing: string[] = [];
-if (!clientUserId) additionalMissing.push("PHASE1_CLIENT_USER_ID (or PHASE0_CLIENT_USER_ID)");
 if (!spreadsheetId) additionalMissing.push("PHASE1_SPREADSHEET_ID or PHASE0_SPREADSHEET_ID");
 if (!sheetName) additionalMissing.push("PHASE1_SHEET_NAME or PHASE0_SHEET_NAME");
-
 if (!resolveFunctionsBase()) additionalMissing.push("SUPABASE_FUNCTIONS_URL or SB_URL/SUPABASE_URL/SB_PROJECT_REF");
+
+const clientUserId = process.env.PHASE1_CLIENT_USER_ID || process.env.PHASE0_CLIENT_USER_ID || process.env.TEST_CLIENT_USER_ID;
+if (!clientUserId) additionalMissing.push("PHASE1_CLIENT_USER_ID (or fallback)");
 
 const allMissing = [...missingCore, ...additionalMissing];
 
 if (allMissing.length > 0) {
-  describe.skip("Phase 1 backend integration", () => {
+  describe.skip("Phase 2.5 undo integration", () => {
     it.skip(`skipped because missing env vars: ${allMissing.join(", ")}`, () => {
       // noop
     });
@@ -79,9 +77,19 @@ if (allMissing.length > 0) {
 
   const script = google.script({ version: "v1", auth: jwt });
   const sheets = google.sheets({ version: "v4", auth: jwt });
+  const functionsBase = resolveFunctionsBase()!;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.SB_ANON_KEY;
+  if (anonKey) {
+    headers.Authorization = `Bearer ${anonKey}`;
+    headers.apikey = anonKey;
+  }
 
   const seedValue = process.env.PHASE1_SEED_VALUE || "target";
-  const backendHello = process.env.PHASE1_EXPECTED_HELLO || "hello";
+  const initialHelloTarget = "initial";
 
   function nextColumn(a1: string): string {
     const match = /^([A-Z]+)(\d+)$/i.exec(a1.trim());
@@ -104,13 +112,13 @@ if (allMissing.length > 0) {
 
   const expectedCell = nextColumn(targetRange);
 
-  describe("Phase 1 backend integration", () => {
+  describe("Phase 2.5 undo integration", () => {
     beforeAll(async () => {
       await jwt.authorize();
     }, 30000);
 
     it(
-      "writes hello via Supabase apply endpoint",
+      "restores previous value via undo endpoint",
       async () => {
         await sheets.spreadsheets.values.batchUpdate({
           spreadsheetId: spreadsheetId!,
@@ -123,7 +131,7 @@ if (allMissing.length > 0) {
               },
               {
                 range: `${sheetName}!${expectedCell}`,
-                values: [[""]]
+                values: [[initialHelloTarget]]
               }
             ]
           }
@@ -145,23 +153,10 @@ if (allMissing.length > 0) {
         });
 
         const contextResult = contextData?.response?.result as
-          | { ok: boolean; context: { spreadsheetId: string; sheetId: number; activeRangeA1: string } }
+          | { ok: boolean; context: { spreadsheetId: string; sheetId: number; sheetName: string; activeRangeA1: string } }
           | undefined;
 
         expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
-
-        const functionsBase = resolveFunctionsBase();
-        if (!functionsBase) {
-          throw new Error("Unable to resolve Supabase functions base URL from environment");
-        }
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json"
-        };
-        const anonKey = process.env.SUPABASE_ANON_KEY || process.env.SB_ANON_KEY;
-        if (anonKey) {
-          headers.Authorization = `Bearer ${anonKey}`;
-          headers.apikey = anonKey;
-        }
 
         const applyRes = await fetch(`${functionsBase}/apply`, {
           method: "POST",
@@ -171,39 +166,35 @@ if (allMissing.length > 0) {
             context: contextResult?.context
           })
         });
-
         const applyJson = await applyRes.json();
+        expect(applyRes.ok, `apply failed: ${JSON.stringify(applyJson)}`).toBe(true);
+        const patchId = applyJson?.patchId as string;
+        expect(patchId).toBeTruthy();
 
-        if (!applyRes.ok) {
-          if (applyRes.status === 401) {
-            throw new Error(
-              `apply endpoint returned 401 (likely missing OAuth token for clientUserId ${clientUserId}). Response: ${JSON.stringify(
-                applyJson
-              )}`
-            );
-          }
-          throw new Error(`apply endpoint failed (${applyRes.status}): ${JSON.stringify(applyJson)}`);
-        }
-
-        expect(applyJson?.ok).toBe(true);
-        expect(applyJson?.patchId).toBeTruthy();
-        expect(typeof applyJson?.wroteA1).toBe("string");
-
-        const { data: valuesRes } = await sheets.spreadsheets.values.get({
+        const { data: afterApply } = await sheets.spreadsheets.values.get({
           spreadsheetId: spreadsheetId!,
           range: `${sheetName}!${expectedCell}`
         });
-        const wroteValue = valuesRes.values?.[0]?.[0] ?? "";
-        expect(wroteValue, `apply payload: ${JSON.stringify(applyJson)}`).toBe(backendHello);
+        const wroteValue = afterApply.values?.[0]?.[0] ?? "";
+        expect(wroteValue).toBe("hello");
 
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: spreadsheetId!,
-          range: `${sheetName}!${expectedCell}`,
-          valueInputOption: "RAW",
-          requestBody: { values: [[""]] }
+        const undoRes = await fetch(`${functionsBase}/undo`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ clientUserId, patchId })
         });
+        const undoJson = await undoRes.json();
+        expect(undoRes.ok, `undo failed: ${JSON.stringify(undoJson)}`).toBe(true);
+        expect(undoJson?.ok).toBe(true);
+
+        const { data: afterUndo } = await sheets.spreadsheets.values.get({
+          spreadsheetId: spreadsheetId!,
+          range: `${sheetName}!${expectedCell}`
+        });
+        const restoredValue = afterUndo.values?.[0]?.[0] ?? "";
+        expect(restoredValue).toBe(initialHelloTarget);
       },
-      90000
+      120000
     );
   });
 }

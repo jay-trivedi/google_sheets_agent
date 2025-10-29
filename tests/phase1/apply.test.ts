@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { google } from "googleapis";
 import { config } from "dotenv";
+import { randomUUID } from "crypto";
 
 config({ path: ".env.local" });
 
@@ -163,12 +164,20 @@ if (allMissing.length > 0) {
           headers.apikey = anonKey;
         }
 
+        const sessionId = randomUUID();
+        const runId = randomUUID();
+        const todoId = randomUUID();
+
         const applyRes = await fetch(`${functionsBase}/apply`, {
           method: "POST",
           headers,
           body: JSON.stringify({
             clientUserId,
-            context: contextResult?.context
+            context: contextResult?.context,
+            sessionId,
+            spreadsheetId: contextResult?.context.spreadsheetId,
+            runId,
+            todoId
           })
         });
 

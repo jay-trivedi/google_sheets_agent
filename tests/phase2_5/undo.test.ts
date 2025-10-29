@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { google } from "googleapis";
 import { config } from "dotenv";
+import { randomUUID } from "crypto";
 
 config({ path: ".env.local" });
 
@@ -179,11 +180,18 @@ if (allMissing.length > 0) {
 
           expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
 
+          const sessionId = randomUUID();
+          const runId = randomUUID();
+          const todoId = randomUUID();
+
           const previewRes = await fetch(`${functionsBase}/preview`, {
             method: "POST",
             headers,
             body: JSON.stringify({
-              clientUserId,
+              sessionId,
+              spreadsheetId: contextResult?.context.spreadsheetId,
+              runId,
+              todoId,
               context: contextResult?.context
             })
           });
@@ -198,7 +206,11 @@ if (allMissing.length > 0) {
             body: JSON.stringify({
               clientUserId,
               context: contextResult?.context,
-              fingerprint
+              fingerprint,
+              sessionId,
+              spreadsheetId: contextResult?.context.spreadsheetId,
+              runId,
+              todoId
             })
           });
           const applyJson = await applyRes.json();

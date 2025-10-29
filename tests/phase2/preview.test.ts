@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { google } from "googleapis";
 import { config } from "dotenv";
+import { randomUUID } from "crypto";
 
 config({ path: ".env.local" });
 
@@ -111,11 +112,18 @@ if (allMissing.length > 0) {
         const context = data?.response?.result?.context;
         expect(context, "Apps Script context unavailable").toBeTruthy();
 
+        const sessionId = randomUUID();
+        const runId = randomUUID();
+        const todoId = randomUUID();
+
         const res = await fetch(`${functionsBase}/preview`, {
           method: "POST",
           headers,
           body: JSON.stringify({
-            clientUserId: "phase2-test",
+            sessionId,
+            spreadsheetId: context.spreadsheetId,
+            runId,
+            todoId,
             context
           })
         });

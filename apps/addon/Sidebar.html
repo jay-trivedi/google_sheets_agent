@@ -223,16 +223,49 @@
         const sendBtn = document.getElementById('sendBtn');
         const messageInput = document.getElementById('messageInput');
         const chatPanel = document.getElementById('chatPanel');
-        let runActive = false;
+        const toolbarTitle = document.getElementById('toolbarTitle');
 
-        const cannedReply = `Thanks for the prompt!
-I'll take a quick pass over the sheet, gather the context I need, and sketch a plan.
-Once we're lined up, I'll walk you through the updates before making any writes.`;
+        const CONFIG = {
+          functionsUrl: 'https://zyqjprqctwiejxoeficw.functions.supabase.co',
+          anonKey:
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5cWpwcnFjdHdpZWp4b2VmaWN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1NjM1NDAsImV4cCI6MjA3NjEzOTU0MH0.FJObUb_tf_dvEM5Nu0FXv52acfbosYy3SsF2AWznLo0'
+        };
+
+        let runActive = false;
+        const sessionKey = 'ai-analyst-session-id';
+        let cachedSessionId = null;
+        let currentSpreadsheetId = null;
+        let historyLoaded = false;
 
         function appendMessage(text, role) {
           const block = document.createElement('div');
           block.className = role === 'user' ? 'bubble user' : 'bubble agent';
           block.textContent = text;
+          chatPanel.appendChild(block);
+          chatPanel.scrollTop = chatPanel.scrollHeight;
+        }
+
+        function appendHistoryMessage({ content, role, metadata }) {
+          if (role !== 'user' && metadata && typeof metadata.summary === 'string') {
+            appendAgentEvent(content, metadata.summary);
+            return;
+          }
+          appendMessage(content, role === 'user' ? 'user' : 'agent');
+        }
+
+        function appendAgentEvent(title, details) {
+          const block = document.createElement('div');
+          block.className = 'bubble agent';
+          const strong = document.createElement('strong');
+          strong.textContent = `${title}\n`;
+          const para = document.createElement('div');
+          para.style.whiteSpace = 'pre-wrap';
+          para.style.fontSize = '12px';
+          para.style.opacity = '0.85';
+          para.textContent = details;
+
+          block.appendChild(strong);
+          block.appendChild(para);
           chatPanel.appendChild(block);
           chatPanel.scrollTop = chatPanel.scrollHeight;
         }
@@ -260,7 +293,141 @@ Once we're lined up, I'll walk you through the updates before making any writes.
           }
         }
 
-        function submitMessage() {
+        function randomId(prefix) {
+          if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+          return `${prefix || 'id'}-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+        }
+
+        function authHeaders() {
+          return {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${CONFIG.anonKey}`,
+            apikey: CONFIG.anonKey
+          };
+        }
+
+        function getSessionId() {
+          if (cachedSessionId) return cachedSessionId;
+          try {
+            const stored = window.localStorage.getItem(sessionKey);
+            if (stored) {
+              cachedSessionId = stored;
+              return cachedSessionId;
+            }
+          } catch (_) {
+            // localStorage might be unavailable; ignore.
+          }
+          cachedSessionId = randomId('session');
+          try {
+            window.localStorage.setItem(sessionKey, cachedSessionId);
+          } catch (_) {
+            // ignore storage failures
+          }
+          return cachedSessionId;
+        }
+
+        function getSpreadsheetTitle() {
+          return new Promise((resolve) => {
+            if (!google || !google.script || !google.script.run) {
+              resolve(null);
+              return;
+            }
+            google.script.run
+              .withSuccessHandler((title) => resolve(title))
+              .withFailureHandler(() => resolve(null))
+              .getActiveSpreadsheetName?.();
+          });
+        }
+
+        function fetchSheetContext() {
+          return new Promise((resolve, reject) => {
+            if (!google || !google.script || !google.script.run) {
+              reject(new Error('Apps Script runtime unavailable.'));
+              return;
+            }
+            google.script.run
+              .withSuccessHandler((context) => resolve(context))
+              .withFailureHandler((err) => reject(err))
+              .getContext();
+          });
+        }
+
+        async function postToFunctions(path, body) {
+          const res = await fetch(`${CONFIG.functionsUrl.replace(/\/$/, '')}${path}`, {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`HTTP ${res.status}: ${text}`);
+          }
+          return res.json();
+        }
+
+        async function logMessage({ role, content, metadata }) {
+          if (!currentSpreadsheetId) return;
+          try {
+            await fetch(`${CONFIG.functionsUrl.replace(/\/$/, '')}/agent_messages`, {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({
+                sessionId: getSessionId(),
+                spreadsheetId: currentSpreadsheetId,
+                role,
+                content,
+                metadata
+              })
+            });
+          } catch (error) {
+            console.warn('Failed to log message', error);
+          }
+        }
+
+        async function loadHistory() {
+          if (historyLoaded || !currentSpreadsheetId) return;
+          try {
+            const params = new URLSearchParams({
+              sessionId: getSessionId(),
+              spreadsheetId: currentSpreadsheetId,
+              limit: '100'
+            });
+            const res = await fetch(
+              `${CONFIG.functionsUrl.replace(/\/$/, '')}/agent_messages?${params.toString()}`,
+              { headers: authHeaders() }
+            );
+            if (!res.ok) {
+              console.warn('Failed to load history', await res.text());
+              return;
+            }
+            const json = await res.json();
+            if (!json?.ok) return;
+            chatPanel.innerHTML = '';
+            (json.messages ?? []).forEach((msg) => appendHistoryMessage(msg));
+            historyLoaded = true;
+          } catch (error) {
+            console.warn('Failed to load history', error);
+          }
+        }
+
+        async function boot() {
+          try {
+            const [context, title] = await Promise.all([fetchSheetContext(), getSpreadsheetTitle()]);
+            if (context?.spreadsheetId) {
+              currentSpreadsheetId = context.spreadsheetId;
+              await loadHistory();
+            }
+            if (title) {
+              toolbarTitle.textContent = `Session — ${title}`;
+            }
+          } catch (error) {
+            console.warn('Initial load failed', error);
+          }
+        }
+
+        boot();
+
+        async function submitMessage() {
           if (runActive) {
             setRunState(false);
             return;
@@ -272,10 +439,56 @@ Once we're lined up, I'll walk you through the updates before making any writes.
             appendMessage(text, 'user');
           }
           messageInput.value = '';
-          setTimeout(() => {
-            appendMessage(cannedReply, 'agent');
+          try {
+            const [context, title] = await Promise.all([fetchSheetContext(), getSpreadsheetTitle()]);
+            if (title) {
+              toolbarTitle.textContent = `Session — ${title}`;
+            }
+
+            const sessionId = getSessionId();
+            const runId = randomId('run');
+            appendMessage('Capturing sheet context…', 'agent');
+
+             if (context?.spreadsheetId) {
+               currentSpreadsheetId = context.spreadsheetId;
+               await loadHistory();
+             }
+            if (text) {
+              await logMessage({ role: 'user', content: text });
+            }
+
+            const payload = {
+              sessionId,
+              spreadsheetId: context?.spreadsheetId ?? 'unknown-sheet',
+              runId,
+              sheetContext: context
+            };
+
+            const planResponse = await postToFunctions('/plan', payload);
+            if (planResponse?.cancelled) {
+              appendMessage('Run cancelled before planning.', 'agent');
+              await logMessage({ role: 'event', content: 'Run cancelled before planning.' });
+            } else {
+              const summaryLines = [
+                `Sheet: ${context.sheetName}`,
+                `Selection: ${context.activeRangeA1}`,
+                `Size: ${context.activeRowCount} × ${context.activeColumnCount}`,
+                `Captured at: ${new Date(planResponse.timestamp ?? Date.now()).toLocaleTimeString()}`
+              ].join('\n');
+              appendAgentEvent('Context captured', summaryLines);
+              await logMessage({
+                role: 'agent',
+                content: 'Context captured',
+                metadata: { summary: summaryLines }
+              });
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            appendAgentEvent('Context capture failed', message);
+            await logMessage({ role: 'event', content: `Context capture failed: ${message}` });
+          } finally {
             setRunState(false);
-          }, 800);
+          }
         }
 
         sendBtn.addEventListener('click', submitMessage);

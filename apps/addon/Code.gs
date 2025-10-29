@@ -167,3 +167,12 @@ function _colToLetters(col) {
   }
   return s;
 }
+
+function getActiveSpreadsheetName() {
+  try {
+    return SpreadsheetApp.getActive().getName();
+  } catch (error) {
+    console.warn('Failed to read spreadsheet name', error);
+    return null;
+  }
+}

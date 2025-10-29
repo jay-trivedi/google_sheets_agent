@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { google } from "googleapis";
 import { config } from "dotenv";
+import { randomUUID } from "crypto";
 
 config({ path: ".env.local" });
 
@@ -179,10 +180,20 @@ if (allMissing.length > 0) {
           expect(contextResult?.ok, "Apps Script context retrieval failed").toBe(true);
           const context = contextResult!.context;
 
+          const sessionId = randomUUID();
+          const runId = randomUUID();
+          const todoId = randomUUID();
+
           const previewRes = await fetch(`${functionsBase}/preview`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ clientUserId, context })
+            body: JSON.stringify({
+              sessionId,
+              spreadsheetId: context.spreadsheetId,
+              runId,
+              todoId,
+              context
+            })
           });
           const previewJson = await previewRes.json();
           expect(previewRes.ok, `preview failed: ${JSON.stringify(previewJson)}`).toBe(true);
@@ -201,7 +212,15 @@ if (allMissing.length > 0) {
           const staleApply = await fetch(`${functionsBase}/apply`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ clientUserId, context, fingerprint })
+            body: JSON.stringify({
+              clientUserId,
+              context,
+              fingerprint,
+              sessionId,
+              spreadsheetId: context.spreadsheetId,
+              runId,
+              todoId
+            })
           });
           const staleJson = await staleApply.json();
           expect(staleApply.status).toBe(409);
@@ -212,7 +231,13 @@ if (allMissing.length > 0) {
           const secondPreviewRes = await fetch(`${functionsBase}/preview`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ clientUserId, context })
+            body: JSON.stringify({
+              sessionId,
+              spreadsheetId: context.spreadsheetId,
+              runId,
+              todoId,
+              context
+            })
           });
           const secondPreviewJson = await secondPreviewRes.json();
           expect(secondPreviewRes.ok, `second preview failed: ${JSON.stringify(secondPreviewJson)}`).toBe(true);
@@ -222,7 +247,15 @@ if (allMissing.length > 0) {
           const applyRes = await fetch(`${functionsBase}/apply`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ clientUserId, context, fingerprint: freshFingerprint })
+            body: JSON.stringify({
+              clientUserId,
+              context,
+              fingerprint: freshFingerprint,
+              sessionId,
+              spreadsheetId: context.spreadsheetId,
+              runId,
+              todoId
+            })
           });
           const applyJson = await applyRes.json();
           expect(applyRes.ok, `apply failed: ${JSON.stringify(applyJson)}`).toBe(true);

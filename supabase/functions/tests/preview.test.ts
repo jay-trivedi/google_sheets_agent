@@ -5,6 +5,7 @@ import { anonKey, functionsBaseUrl } from "./helpers.ts";
 
 Deno.test("preview endpoint reports hello diff", async () => {
   const base = functionsBaseUrl();
+  const runId = crypto.randomUUID();
   const res = await fetch(new URL("/preview", base), {
     method: "POST",
     headers: {
@@ -12,7 +13,10 @@ Deno.test("preview endpoint reports hello diff", async () => {
       ...(anonKey() ? { Authorization: `Bearer ${anonKey()}`, apikey: anonKey() } : {})
     },
     body: JSON.stringify({
-      clientUserId: "test-user",
+      sessionId: "session-test",
+      spreadsheetId: "sheet-test",
+      runId,
+      todoId: "todo-test",
       context: {
         spreadsheetId: "dummy",
         sheetId: 1,
@@ -42,5 +46,8 @@ Deno.test("preview endpoint reports hello diff", async () => {
   }
   if (json.preview?.changes?.[0]?.cell !== "Sheet1!B1") {
     throw new Error(`preview change target mismatch: ${JSON.stringify(json.preview)}`);
+  }
+  if (!json?.fingerprint?.range) {
+    throw new Error(`preview response missing fingerprint: ${JSON.stringify(json)}`);
   }
 });

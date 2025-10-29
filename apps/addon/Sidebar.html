@@ -56,6 +56,64 @@
         flex-direction: column;
         overflow: hidden;
       }
+      .todo-panel {
+        display: none;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 12px 16px;
+      }
+      .todo-header {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #2563eb;
+      }
+      .todo-list {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .todo-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #475569;
+      }
+      .todo-indicator {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid #bfdbfe;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: #2563eb;
+        background: rgba(59, 130, 246, 0.12);
+      }
+      .todo-item.in_progress .todo-indicator {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+      }
+      .todo-item.done .todo-indicator {
+        background: #4ade80;
+        border-color: #4ade80;
+        color: #ffffff;
+      }
+      .todo-item.blocked .todo-indicator {
+        background: #f87171;
+        border-color: #f87171;
+        color: #ffffff;
+      }
+      .todo-title {
+        flex: 1;
+      }
       .chat-panel {
         flex: 1;
         border-radius: 0;
@@ -196,6 +254,10 @@
       </div>
     </nav>
     <main class="workspace">
+      <section class="todo-panel" id="todoPanel">
+        <header class="todo-header">Todo Tracker</header>
+        <ul class="todo-list" id="todoList"></ul>
+      </section>
       <section class="chat-panel" id="chatPanel"></section>
       <div class="composer">
         <div class="attachment-row" id="attachmentRow"></div>
@@ -224,6 +286,8 @@
         const messageInput = document.getElementById('messageInput');
         const chatPanel = document.getElementById('chatPanel');
         const toolbarTitle = document.getElementById('toolbarTitle');
+        const todoPanel = document.getElementById('todoPanel');
+        const todoList = document.getElementById('todoList');
 
         const CONFIG = {
           functionsUrl: 'https://zyqjprqctwiejxoeficw.functions.supabase.co',
@@ -236,6 +300,7 @@
         let cachedSessionId = null;
         let currentSpreadsheetId = null;
         let historyLoaded = false;
+        let currentRunId = null;
 
         function appendMessage(text, role) {
           const block = document.createElement('div');
@@ -410,6 +475,69 @@
           }
         }
 
+        function renderTodos(todos) {
+          if (!Array.isArray(todos) || todos.length === 0) {
+            todoPanel.style.display = 'none';
+            todoList.innerHTML = '';
+            return;
+          }
+          todoPanel.style.display = 'block';
+          todoList.innerHTML = '';
+          todos.forEach((todo, index) => {
+            const item = document.createElement('li');
+            item.className = `todo-item ${todo.status || ''}`.trim();
+
+            const indicator = document.createElement('span');
+            indicator.className = 'todo-indicator';
+            indicator.textContent = todo.status === 'done' ? '✓' : String(index + 1);
+
+            const title = document.createElement('span');
+            title.className = 'todo-title';
+            title.textContent = todo.title ?? 'Untitled task';
+
+            item.appendChild(indicator);
+            item.appendChild(title);
+            todoList.appendChild(item);
+          });
+        }
+
+        async function runPlanner(instruction) {
+          if (!currentSpreadsheetId || !currentRunId) return;
+          try {
+            const response = await postToFunctions('/planner', {
+              sessionId: getSessionId(),
+              spreadsheetId: currentSpreadsheetId,
+              runId: currentRunId,
+              instruction
+            });
+            if (response?.cancelled) {
+              appendAgentEvent('Planner stopped', 'Run cancelled before planning step.');
+              await logMessage({ role: 'event', content: 'Planner run cancelled.' });
+              return;
+            }
+            if (!response?.ok) {
+              appendAgentEvent('Planner error', 'Planner returned an unexpected response.');
+              await logMessage({ role: 'event', content: 'Planner returned an unexpected response.' });
+              return;
+            }
+
+            renderTodos(response.todos || []);
+
+            if (response.todo?.title) {
+              appendAgentEvent('Planner started', response.todo.title);
+              await logMessage({
+                role: 'agent',
+                content: 'Planner started',
+                metadata: { todoId: response.todo.id, title: response.todo.title }
+              });
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            appendAgentEvent('Planner error', message);
+            await logMessage({ role: 'event', content: `Planner error: ${message}` });
+          }
+        }
+
         async function boot() {
           try {
             const [context, title] = await Promise.all([fetchSheetContext(), getSpreadsheetTitle()]);
@@ -447,6 +575,7 @@
 
             const sessionId = getSessionId();
             const runId = randomId('run');
+            currentRunId = runId;
             appendMessage('Capturing sheet context…', 'agent');
 
              if (context?.spreadsheetId) {
@@ -481,6 +610,7 @@
                 content: 'Context captured',
                 metadata: { summary: summaryLines }
               });
+              await runPlanner(text);
             }
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);

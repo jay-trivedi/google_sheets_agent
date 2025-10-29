@@ -3,276 +3,288 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Analyst (Phase 2.5)</title>
+    <title>Agent Workspace</title>
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
-      header { padding: 12px 14px; border-bottom: 1px solid #eee; font-weight: 600; }
-      .wrap { padding: 12px 14px; }
-      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-      button { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background: #fff; }
-      button.primary { border-color: #2a7; }
-      pre { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; }
-      small { color: #666; }
-      input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px;}
-      .hint { font-size: 12px; color: #666; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f5f7fb;
+        display: flex;
+        flex-direction: column;
+        color: #1f2937;
+      }
+      .toolbar {
+        display: grid;
+        grid-template-columns: 3fr 1fr;
+        align-items: center;
+        padding: 8px 18px;
+        min-height: 30px;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      .toolbar-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+      .toolbar-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+      .toolbar-actions .icon {
+        border: none;
+        background: transparent;
+        color: #1f2937;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .toolbar-actions .icon:hover {
+        color: #2563eb;
+      }
+      .workspace {
+        flex: 1;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .chat-panel {
+        flex: 1;
+        border-radius: 0;
+        border: none;
+        background: #ffffff;
+        box-shadow: none;
+        padding: 12px 16px;
+        overflow-y: auto;
+        font-size: 13px;
+        line-height: 1.45;
+        color: #475569;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bubble {
+        max-width: 80%;
+        padding: 10px 12px;
+        border-radius: 16px;
+        font-size: inherit;
+        line-height: inherit;
+        white-space: pre-wrap;
+      }
+      .bubble.user {
+        align-self: flex-end;
+        background: rgba(148, 163, 184, 0.16);
+        color: #1f2937;
+      }
+      .bubble.agent {
+        align-self: flex-start;
+        background: transparent;
+        color: #475569;
+      }
+      .composer {
+        padding: 0px 12px 12px;
+        background: #f5f7fb;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+      }
+      .attachment-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        min-height: 10px;
+        padding-left: 4px;
+      }
+      .composer-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .composer-input {
+        border-radius: 12px;
+        background: #ffffff;
+        border: 1px solid #dbeafe;
+        box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.08);
+        padding: 8px 8px;
+        display: flex;
+        min-height: 56px;
+      }
+      .composer-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .composer-controls .center {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+      }
+      .attachment-pill {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.18);
+        color: #1d4ed8;
+        font-size: 12px;
+      }
+      .composer-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: none;
+        background: #ffffff;
+        box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        cursor: pointer;
+        color: #1f2937;
+        transition: transform 0.15s ease;
+      }
+      .composer-btn:hover { transform: translateY(-1px); }
+      .composer-btn.attach {
+        border: 1px dashed #93c5fd;
+        background: rgba(59, 130, 246, 0.18);
+        color: #2563eb;
+      }
+      .composer-btn.send {
+        background: #2563eb;
+        color: #ffffff;
+      }
+      .composer-btn.stop {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .composer-btn input { display: none; }
+      textarea {
+        flex: 1;
+        resize: none;
+        border: none;
+        background: transparent;
+        font-family: inherit;
+        font-size: 13px;
+        color: #1f2937;
+        min-height: 32px;
+      }
+      textarea:focus { outline: none; }
+      .footer {
+        padding: 8px 24px 18px;
+        text-align: right;
+        font-size: 12px;
+        color: #6b7280;
+      }
     </style>
   </head>
   <body>
-    <header>AI Analyst — Phase 2.5</header>
-    <div class="wrap">
-      <div class="row">
-        <button class="primary" id="btnRead">Read context</button>
-        <button id="btnPreview">Preview change</button>
-        <button id="btnLocalHello">Write “hello” locally</button>
-        <button id="btnBackendHello" disabled>Apply via backend</button>
-        <button id="btnUndo" disabled>Undo last apply</button>
-        <button id="btnClear">Clear</button>
+    <nav class="toolbar">
+      <div class="toolbar-title" id="toolbarTitle">Session — Untitled</div>
+      <div class="toolbar-actions">
+        <button class="icon" title="History">⟳</button>
+        <button class="icon" title="Settings">⚙</button>
+        <button class="icon" title="New chat">＋</button>
       </div>
-
-      <div class="row">
-        <button id="btnConnect">Connect Google (OAuth)</button>
-        <small>Redirect URI must be <code class="mono">/functions/v1/oauth-callback</code></small>
+    </nav>
+    <main class="workspace">
+      <section class="chat-panel" id="chatPanel"></section>
+      <div class="composer">
+        <div class="attachment-row" id="attachmentRow"></div>
+        <div class="composer-shell">
+          <div class="composer-input">
+            <textarea id="messageInput" placeholder="Ask anything about your spreadsheet..."></textarea>
+          </div>
+          <div class="composer-controls">
+            <label class="composer-btn attach" title="Attach">
+              ＋
+              <input type="file" id="fileInput" multiple accept="image/*,application/pdf" />
+            </label>
+            <div class="center">
+              <button class="composer-btn" id="rulesBtn" title="Rules">⚙</button>
+            </div>
+            <button class="composer-btn send" id="sendBtn" title="Send">↑</button>
+          </div>
+        </div>
       </div>
-
-      <div class="row">
-        <label class="hint">Functions base URL:</label>
-        <input id="baseUrl" type="text" value="https://zyqjprqctwiejxoeficw.functions.supabase.co" />
-      </div>
-      <div class="row">
-        <label class="hint">Supabase anon key (optional for local tests):</label>
-        <input id="anonKey" type="text" value="" />
-      </div>
-
-      <div class="row">
-        <button id="btnPing">Ping backend (/plan)</button>
-        <small class="hint">Optional sanity check.</small>
-      </div>
-
-      <pre id="out">1) Connect Google → finish OAuth in new tab.\n2) Read context.\n3) Preview change → confirm summary.\n4) Apply via backend.\n5) Undo if needed (writes to AI_AUDIT_LOG).\n\nBase must point to your functions (dev default shown).</pre>
-    </div>
-
+    </main>
     <script>
       (function () {
-        const out = document.getElementById('out');
-        const btnRead = document.getElementById('btnRead');
-        const btnClear = document.getElementById('btnClear');
-        const btnPreview = document.getElementById('btnPreview');
-        const btnLocalHello = document.getElementById('btnLocalHello');
-        const btnBackendHello = document.getElementById('btnBackendHello');
-        const btnUndo = document.getElementById('btnUndo');
-        const btnConnect = document.getElementById('btnConnect');
-        const btnPing = document.getElementById('btnPing');
-        const baseUrl = document.getElementById('baseUrl');
-        const anonKey = document.getElementById('anonKey');
+        const fileInput = document.getElementById('fileInput');
+        const attachmentRow = document.getElementById('attachmentRow');
+        const sendBtn = document.getElementById('sendBtn');
+        const messageInput = document.getElementById('messageInput');
+        const chatPanel = document.getElementById('chatPanel');
+        let runActive = false;
 
-        // Stable client user id (stored locally; binds OAuth tokens server-side)
-        const storageKey = 'ai_analyst_client_user_id';
-        let clientUserId = localStorage.getItem(storageKey);
-        if (!clientUserId) {
-          clientUserId = 'u_' + Math.random().toString(36).slice(2) + Date.now();
-          localStorage.setItem(storageKey, clientUserId);
+        const cannedReply = `Thanks for the prompt!
+I'll take a quick pass over the sheet, gather the context I need, and sketch a plan.
+Once we're lined up, I'll walk you through the updates before making any writes.`;
+
+        function appendMessage(text, role) {
+          const block = document.createElement('div');
+          block.className = role === 'user' ? 'bubble user' : 'bubble agent';
+          block.textContent = text;
+          chatPanel.appendChild(block);
+          chatPanel.scrollTop = chatPanel.scrollHeight;
         }
 
-        function print(obj) { out.textContent = JSON.stringify(obj, null, 2); }
-        function err(e) {
-          if (e instanceof Error) {
-            print({ error: e.message, stack: e.stack });
-          } else {
-            print({ error: String(e && e.message || e) });
-          }
-        }
-        function headers() {
-          return {
-            'Content-Type': 'application/json',
-            ...(anonKey.value ? { 'Authorization': 'Bearer ' + anonKey.value, 'apikey': anonKey.value } : {})
-          };
-        }
-        function fn(path) {
-          return baseUrl.value.replace(/\/$/, '') + path;
-        }
-
-        let lastPreview = null;
-        let lastFingerprint = null;
-        let lastContextSignature = null;
-        let lastPatchId = null;
-
-        function contextSignature(ctx) {
-          return `${ctx.spreadsheetId}:${ctx.sheetId}:${ctx.activeRangeA1}`;
-        }
-
-        function resetPreviewState() {
-          lastPreview = null;
-          lastFingerprint = null;
-          lastContextSignature = null;
-          btnBackendHello.disabled = true;
-          lastPatchId = null;
-          btnUndo.disabled = true;
-        }
-
-        // Read current sheet context via Apps Script
-        btnRead.addEventListener('click', function () {
-          out.textContent = 'Reading…';
-          google.script.run
-            .withSuccessHandler(function (ctx) {
-              print({ clientUserId, ctx });
-              window.__ctx = ctx;
-              resetPreviewState();
-            })
-            .withFailureHandler(err)
-            .getContext();
-        });
-
-        // Start OAuth: calls /oauth-start to get authUrl, opens in a tab
-        btnConnect.addEventListener('click', async function () {
-          try {
-            out.textContent = 'Starting OAuth…';
-            const res = await fetch(fn('/oauth-start'), {
-              method: 'POST', headers: headers(), body: JSON.stringify({ clientUserId })
-            });
-            const json = await res.json();
-            if (!json.authUrl) return err('No authUrl from server');
-            window.open(json.authUrl, '_blank', 'width=520,height=640');
-            print({ step: 'oauth_started', clientUserId, redirect: '.../oauth-callback' });
-          } catch (e) { err(e); }
-        });
-
-        // Request preview via Supabase
-        async function ensureContext() {
-          if (window.__ctx) return window.__ctx;
-          return await new Promise((resolve, reject) => {
-            google.script.run
-              .withSuccessHandler((ctx) => {
-                window.__ctx = ctx;
-                resolve(ctx);
-              })
-              .withFailureHandler(reject)
-              .getContext();
+        fileInput.addEventListener('change', () => {
+          attachmentRow.innerHTML = '';
+          Array.from(fileInput.files || []).forEach((file) => {
+            const pill = document.createElement('span');
+            pill.className = 'attachment-pill';
+            pill.textContent = file.name;
+            attachmentRow.appendChild(pill);
           });
+        });
+
+        function setRunState(active) {
+          runActive = active;
+          if (active) {
+            sendBtn.classList.add('stop');
+            sendBtn.classList.remove('send');
+            sendBtn.textContent = '■';
+          } else {
+            sendBtn.classList.remove('stop');
+            sendBtn.classList.add('send');
+            sendBtn.textContent = '↑';
+          }
         }
 
-        btnPreview.addEventListener('click', async function () {
-          try {
-            out.textContent = 'Previewing…';
-            const ctx = await ensureContext();
-            const res = await fetch(fn('/preview'), {
-              method: 'POST',
-              headers: headers(),
-              body: JSON.stringify({ clientUserId, context: ctx })
-            });
-            const json = await res.json();
-            if (!res.ok || !json.ok) {
-              err(json?.error || `Preview failed (${res.status})`);
-              resetPreviewState();
-              return;
-            }
-            lastPreview = json.preview;
-            lastFingerprint = json.fingerprint || null;
-            lastContextSignature = contextSignature(ctx);
-            btnBackendHello.disabled = false;
-            print({ preview: json.preview, ctx });
-          } catch (e) {
-            err(e);
-            resetPreviewState();
-          }
-        });
-
-        // Apply via Apps Script locally
-        btnLocalHello.addEventListener('click', function () {
-          out.textContent = 'Applying locally…';
-          google.script.run
-            .withSuccessHandler(function (result) {
-              print({ mode: 'local', result });
-              resetPreviewState();
-            })
-            .withFailureHandler(err)
-            .applyLocalWriteHello();
-        });
-
-        // Apply via backend: posts clientUserId + context to /apply
-        btnBackendHello.addEventListener('click', async function () {
-          try {
-            out.textContent = 'Applying via backend…';
-            const ctx = await ensureContext();
-            if (!lastPreview || lastContextSignature !== contextSignature(ctx)) {
-              err("Run preview before applying.");
-              btnBackendHello.disabled = true;
-              return;
-            }
-            if (!lastFingerprint) {
-              err("Preview missing fingerprint. Re-run preview.");
-              btnBackendHello.disabled = true;
-              return;
-            }
-            const res = await fetch(fn('/apply'), {
-              method: 'POST', headers: headers(),
-              body: JSON.stringify({ clientUserId, context: ctx, fingerprint: lastFingerprint })
-            });
-            const json = await res.json();
-            if (!res.ok || json?.error) {
-              print({ status: res.status, error: json?.error ?? "Apply failed", reason: json?.reason, changedAt: json?.changedAt });
-              resetPreviewState();
-              return;
-            }
-            print(json);
-            resetPreviewState();
-            if (json?.patchId) {
-              lastPatchId = json.patchId;
-              btnUndo.disabled = false;
-            }
-          } catch (e) { err(e); }
-        });
-
-        btnUndo.addEventListener('click', async function () {
-          if (!lastPatchId) {
-            err('No patch to undo.');
-            btnUndo.disabled = true;
+        function submitMessage() {
+          if (runActive) {
+            setRunState(false);
             return;
           }
-          try {
-            out.textContent = 'Undoing…';
-            const res = await fetch(fn('/undo'), {
-              method: 'POST',
-              headers: headers(),
-              body: JSON.stringify({ clientUserId, patchId: lastPatchId })
-            });
-            const json = await res.json();
-            if (!res.ok) {
-              err(json?.error || `Undo failed (${res.status})`);
-              return;
-            }
-            print({ undo: json });
-            lastPatchId = null;
-            btnUndo.disabled = true;
-          } catch (e) {
-            err(e);
+          if (!messageInput.value.trim() && !(fileInput.files && fileInput.files.length)) return;
+          setRunState(true);
+          const text = messageInput.value.trim();
+          if (text) {
+            appendMessage(text, 'user');
+          }
+          messageInput.value = '';
+          setTimeout(() => {
+            appendMessage(cannedReply, 'agent');
+            setRunState(false);
+          }, 800);
+        }
+
+        sendBtn.addEventListener('click', submitMessage);
+        messageInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && (event.metaKey || !event.shiftKey)) {
+            event.preventDefault();
+            submitMessage();
           }
         });
-
-        // Optional: ping /plan
-        btnPing.addEventListener('click', async function () {
-          try {
-            out.textContent = 'Pinging…';
-            const res = await fetch(fn('/plan'), {
-              method: 'POST', headers: headers(),
-              body: JSON.stringify({ instruction: 'ping', from: 'sidebar' })
-            });
-            const text = await res.text();
-            if (!res.ok) {
-              print({ status: res.status, statusText: res.statusText, body: text });
-              return;
-            }
-            let json;
-            try {
-              json = JSON.parse(text);
-            } catch (parseErr) {
-              print({ status: res.status, raw: text, parseError: String(parseErr) });
-              return;
-            }
-            print(json);
-          } catch (e) { err(e); }
-        });
-        btnClear.addEventListener('click', function () { out.textContent = ''; resetPreviewState(); });
       })();
     </script>
   </body>
